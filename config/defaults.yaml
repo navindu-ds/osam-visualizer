@@ -1,0 +1,98 @@
+# OSAM Memory Visualizer — Configuration Defaults
+# All parameters sourced from δ-mem paper (Lei et al., 2026, https://arxiv.org/abs/2605.12357)
+# See docs/paper/osam_methodology.md for detailed explanations and paper section references
+
+# Memory State Parameters (per osam_methodology.md Section 1)
+memory:
+  # Memory size: dimension of the square state matrix S (r x r)
+  # Paper uses r=8 for 8x8 matrix; range [4, 16] supported for visualization
+  size: 8
+  
+  # Write strength: controls how strongly new information overwrites old state
+  # β controls the delta-rule update balance between retention (1-β) and new write (β)
+  # Default 0.1 provides stable learning; user-adjustable via UI slider [0.01, 0.5]
+  write_strength: 0.1  # beta in paper notation
+
+# Projection Parameters (per osam_methodology.md Section 2)
+projections:
+  # Input dimension: all-MiniLM-L6-v2 sentence encoder output size
+  input_dim: 384
+  
+  # Output dimension: projects input_dim to memory space of size r
+  output_dim: 8  # matches memory.size
+  
+  # Initialization scale for projection matrices
+  # Following LoRA practice: small Gaussian init to ensure stability
+  # Paper notes: L2 normalization layer keeps magnitudes in check
+  init_scale: 0.01
+
+# Sentence Encoder (per functionality.md)
+encoder:
+  # Model name for sentence-transformers library
+  # all-MiniLM-L6-v2: 22M params, 384-dim output, no API key required
+  model_name: "sentence-transformers/all-MiniLM-L6-v2"
+  
+  # Cache the encoder model on startup via @st.cache_resource (Streamlit)
+  # Set cache=true to avoid reloading on every app rerun
+  cache: true
+
+# Sentence Registry & Storage Limits (per PRD Configurable parameters)
+storage:
+  # Maximum number of sentences stored in registry
+  # After limit reached, oldest entries may be discarded (future enhancement)
+  max_sentences: 30
+  
+  # Maximum input length per sentence (characters)
+  # Enforced at input validation stage; longer inputs rejected with clear error
+  max_input_length: 500
+
+# Retrieval Parameters (per functionality.md Section 5)
+retrieval:
+  # Number of top results to display in ranking
+  top_k: 5
+  
+  # Similarity metric: cosine similarity between read vector (r_t) and registry value vectors
+  # Future enhancement (Phase 3.5): hybrid r_t + q_t comparison with toggle
+
+# Visualization Parameters
+visualization:
+  # Color scale for heatmap: diverging scale (negative, zero, positive)
+  # Options: "RdBu", "coolwarm", "RdBu_r"
+  colorscale: "RdBu"
+  
+  # Duration (milliseconds) for write-pulse animation on matrix update
+  pulse_duration_ms: 400
+  
+  # Threshold for highlighting changed cells in diff heatmap
+  # Cells with |diff| > threshold are visually emphasized
+  diff_highlight_threshold: 0.01
+
+# Testing Parameters (used in pytest fixtures)
+testing:
+  # Random seed for reproducible matrix initialization in tests
+  seed: 42
+  
+  # Small test matrix size (faster unit tests)
+  test_matrix_size: 3
+  
+  # Default test beta for unit tests
+  test_beta: 0.1
+
+# Logging & Debugging
+logging:
+  # Log level: "debug", "info", "warning", "error"
+  level: "info"
+  
+  # Print debug info about state updates to console (dev only)
+  debug_state_updates: false
+
+# Deployment Configuration
+deployment:
+  # For Streamlit Cloud: set to true
+  # For local development: can be false
+  use_cache: true
+  
+  # Page config for Streamlit
+  page_title: "OSAM Memory Visualizer"
+  page_layout: "wide"
+  initial_sidebar_state: "expanded"

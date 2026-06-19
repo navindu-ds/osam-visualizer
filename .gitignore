@@ -1,3 +1,6 @@
 \venv
 plan.md
 spec.md
+__pycache__/**/*
+*.pyc
+*.pyo

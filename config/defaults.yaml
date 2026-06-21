@@ -32,6 +32,14 @@ encoder:
   # all-MiniLM-L6-v2: 22M params, 384-dim output, no API key required
   model_name: "sentence-transformers/all-MiniLM-L6-v2"
   
+  # Output embedding dimension of the chosen model
+  # Must match the actual output dimension of the model:
+  # - all-MiniLM-L6-v2: 384
+  # - all-mpnet-base-v2: 768
+  # - bge-small-en-v1.5: 384
+  # - bge-base-en-v1.5: 768
+  embedding_dim: 384
+  
   # Cache the encoder model on startup via @st.cache_resource (Streamlit)
   # Set cache=true to avoid reloading on every app rerun
   cache: true

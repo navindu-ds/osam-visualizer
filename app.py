@@ -17,6 +17,10 @@ import streamlit as st
 import yaml
 from pathlib import Path
 
+from src.memory_state import OSAMState
+from src.writing_strategies import SequenceStateWrite
+from src.retrieval import SentenceRegistry
+
 # ---------------------------------------------------------------------------
 # Page configuration — must be the very first Streamlit call
 # ---------------------------------------------------------------------------
@@ -54,10 +58,63 @@ _DIFF_THRESHOLD: float = CONFIG["visualization"]["diff_highlight_threshold"]
 _MODEL_NAME: str = CONFIG["encoder"]["model_name"]
 
 # ---------------------------------------------------------------------------
-# [TASK: session-cache]
-# Encoder caching (@st.cache_resource) and init_session_state()
-# — to be implemented in the next task
+# Encoder caching — loads the SentenceTransformer model once per process.
+# @st.cache_resource is process-level: all user sessions reuse the same model
+# object, avoiding repeated ~80 MB loads. The spinner message is shown in the
+# browser on the very first request that triggers the load.
 # ---------------------------------------------------------------------------
+
+
+@st.cache_resource(show_spinner="Loading encoder model (one-time setup)...")
+def _load_encoder_model():
+    """Return a loaded SentenceTransformer model, cached for the process lifetime."""
+    from sentence_transformers import SentenceTransformer
+
+    return SentenceTransformer(_MODEL_NAME)
+
+
+# ---------------------------------------------------------------------------
+# Session state initialisation — called once per user session.
+# Creates isolated OSAMState, SequenceStateWrite, and SentenceRegistry objects
+# per session, then patches the encoder wrapper to use the cached model so no
+# second model load ever occurs.
+# ---------------------------------------------------------------------------
+
+
+def init_session_state() -> None:
+    """Initialise all per-session state keys if they do not yet exist.
+
+    Safe to call on every rerun — only populates keys that are absent,
+    leaving any existing state (written sentences, retrieval results, etc.)
+    completely untouched.
+    """
+    if "state" not in st.session_state:
+        st.session_state.state = OSAMState(r=_DEFAULT_R, beta=_DEFAULT_BETA)
+
+    if "ssw" not in st.session_state:
+        ssw = SequenceStateWrite()
+        # Inject the globally cached model so the lazy-loader in
+        # SentenceEncoderWrapper never triggers a fresh model load.
+        ssw.encoder._encoder = _load_encoder_model()
+        st.session_state.ssw = ssw
+
+    if "registry" not in st.session_state:
+        st.session_state.registry = SentenceRegistry()
+
+    if "last_diff" not in st.session_state:
+        st.session_state.last_diff = None
+
+    if "last_results" not in st.session_state:
+        st.session_state.last_results = None
+
+    if "last_query" not in st.session_state:
+        st.session_state.last_query = None
+
+    if "confirm_reset" not in st.session_state:
+        st.session_state.confirm_reset = False
+
+    if "beta" not in st.session_state:
+        st.session_state.beta = _DEFAULT_BETA
 
 
 # ---------------------------------------------------------------------------
@@ -89,8 +146,7 @@ _MODEL_NAME: str = CONFIG["encoder"]["model_name"]
 def main() -> None:
     """Render the full OSAM Memory Visualizer UI."""
 
-    # [TASK: session-cache] — initialise per-session state (placeholder)
-    # init_session_state()
+    init_session_state()
 
     # ------------------------------------------------------------------
     # Header

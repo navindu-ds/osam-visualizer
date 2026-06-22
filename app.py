@@ -125,6 +125,12 @@ def init_session_state() -> None:
     if "current_input" not in st.session_state:
         st.session_state.current_input = ""
 
+    if "last_insert_step" not in st.session_state:
+        st.session_state.last_insert_step = None
+
+    if "last_insert_count" not in st.session_state:
+        st.session_state.last_insert_count = None
+
 
 # ---------------------------------------------------------------------------
 # Full session reset — rebuilds all stateful objects for a given r.
@@ -349,6 +355,15 @@ def main() -> None:
         # [TASK: input-area] — text input, buttons (validate on click)
         st.subheader("Input")
 
+        # Show success feedback if last insert completed
+        if st.session_state.last_insert_step is not None:
+            st.success(
+                f"Sentence inserted!"
+            )
+            # Clear the flag so it doesn't show on every rerun
+            st.session_state.last_insert_step = None
+            st.session_state.last_insert_count = None
+
         # Text area for sentence entry
         user_input = st.text_area(
             label="Enter a sentence to Insert or Retrieve",
@@ -381,8 +396,50 @@ def main() -> None:
                         f"Please shorten your text by {len(user_input) - _MAX_INPUT_LEN} characters."
                     )
                 else:
-                    # [TASK: insert-flow] — to be implemented in Step 2.6
-                    st.warning("Insert flow not yet implemented (Step 2.6).")
+                    # Check capacity before encoding (avoid wasted work)
+                    if len(st.session_state.registry.entries) >= _MAX_SENTENCES:
+                        st.warning(
+                            f"⚠️ Memory is full ({_MAX_SENTENCES}/{_MAX_SENTENCES} sentences). "
+                            "Reset memory to add more sentences."
+                        )
+                    else:
+                        # Execute write with loading spinner
+                        with st.spinner("Encoding and writing to memory..."):
+                            new_state, metadata = st.session_state.ssw.execute(
+                                user_input,
+                                st.session_state.state,
+                                beta=st.session_state.beta,
+                            )
+
+                        # Update memory state
+                        st.session_state.state = new_state
+
+                        # Store sentence in registry
+                        st.session_state.registry.store(
+                            text=metadata["text"],
+                            embedding=metadata["embedding"],
+                            key=metadata["key"],
+                            value=metadata["value"],
+                            step_index=metadata["step_index"],
+                        )
+
+                        # Save diff for heatmap pulse animation (Step 2.5)
+                        st.session_state.last_diff = metadata["state_diff"]
+
+                        # Clear stale retrieval results
+                        st.session_state.last_results = None
+
+                        # Clear input field for next entry
+                        st.session_state.current_input = ""
+
+                        # Set success flag for feedback on next render
+                        st.session_state.last_insert_step = metadata["step_index"] + 1
+                        st.session_state.last_insert_count = len(
+                            st.session_state.registry.entries
+                        )
+
+                        # Rerun to show cleared input and success message
+                        st.rerun()
 
         with btn_col2:
             if st.button(

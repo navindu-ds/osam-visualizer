@@ -122,6 +122,9 @@ def init_session_state() -> None:
     if "top_k" not in st.session_state:
         st.session_state.top_k = _TOP_K
 
+    if "current_input" not in st.session_state:
+        st.session_state.current_input = ""
+
 
 # ---------------------------------------------------------------------------
 # Full session reset — rebuilds all stateful objects for a given r.
@@ -343,9 +346,58 @@ def main() -> None:
     # ---------------------------------------------------------------
     with col_main:
 
-        # [TASK: input-area] — text input, char counter, buttons
+        # [TASK: input-area] — text input, buttons (validate on click)
+        st.subheader("Input")
 
-        st.write("---")  # temporary separator; removed once input area is wired
+        # Text area for sentence entry
+        user_input = st.text_area(
+            label="Enter a sentence to Insert or Retrieve",
+            value=st.session_state.current_input,
+            height=100,
+            max_chars=_MAX_INPUT_LEN,
+            placeholder="Type a sentence here (e.g., 'The quick brown fox jumps over the lazy dog')",
+            key="text_input_area",
+            label_visibility="collapsed",
+        )
+        # Sync to session state
+        st.session_state.current_input = user_input
+
+        # Button row: Insert | Retrieve (always enabled, validate on click)
+        btn_col1, btn_col2 = st.columns(2)
+
+        with btn_col1:
+            if st.button(
+                "Insert into Memory",
+                key="insert_btn",
+                type="primary",
+                use_container_width=True,
+            ):
+                # Validate input
+                if len(user_input.strip()) == 0:
+                    st.error("⚠️ Please enter some text before inserting.")
+                elif len(user_input) > _MAX_INPUT_LEN:
+                    st.error(
+                        f"⚠️ Input too long: {len(user_input)}/{_MAX_INPUT_LEN} characters. "
+                        f"Please shorten your text by {len(user_input) - _MAX_INPUT_LEN} characters."
+                    )
+                else:
+                    # [TASK: insert-flow] — to be implemented in Step 2.6
+                    st.warning("Insert flow not yet implemented (Step 2.6).")
+
+        with btn_col2:
+            if st.button(
+                "Retrieve from Memory",
+                key="retrieve_btn",
+                use_container_width=True,
+            ):
+                # Validate input
+                if len(user_input.strip()) == 0:
+                    st.error("⚠️ Please enter a query before retrieving.")
+                else:
+                    # [TASK: retrieve-flow] — to be implemented in Step 2.7
+                    st.warning("Retrieve flow not yet implemented (Step 2.7).")
+
+        st.write("---")
 
         # [TASK: heatmap-component] — memory matrix heatmap
 

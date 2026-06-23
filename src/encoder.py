@@ -39,7 +39,7 @@ class ProjectionMatrix:
     """
 
     def __init__(
-        self, input_dim: int, output_dim: int, scale: float = 0.01
+        self, input_dim: int, output_dim: int, scale: float = 0.01, seed: Optional[int] = None
     ) -> None:
         """
         Initialize projection matrix with small Gaussian weights.
@@ -51,6 +51,9 @@ class ProjectionMatrix:
                              E.g., 8 for default OSAM memory dimension.
             scale (float): Standard deviation for Gaussian initialization.
                           Default 0.01 (small initialization per LoRA practice).
+            seed (int, optional): Random seed for reproducible initialization.
+                                 If None, uses global numpy random state (non-reproducible).
+                                 If provided, uses isolated RandomState for thread safety.
 
         Returns:
             None
@@ -59,6 +62,11 @@ class ProjectionMatrix:
             Small initialization prevents numerical instability and allows
             gradual learning of appropriate projection scales. This applies
             to any input/output dimensions, regardless of embedding model.
+            
+            Using a seed ensures reproducibility and follows ML best practices
+            (similar to PyTorch's torch.manual_seed, TensorFlow's set_seed).
+            The seed parameter enables deterministic testing and consistent
+            behavior across sessions.
         """
         if input_dim < 1 or output_dim < 1:
             raise ValueError(
@@ -70,8 +78,15 @@ class ProjectionMatrix:
 
         self.input_dim: int = input_dim
         self.output_dim: int = output_dim
-        # W: shape (output_dim, input_dim)
-        self.W: np.ndarray = np.random.randn(output_dim, input_dim) * scale
+        
+        # Use isolated RandomState if seed provided (best practice for reproducibility)
+        # This ensures thread safety and avoids polluting global np.random state
+        if seed is not None:
+            rng = np.random.RandomState(seed)
+            self.W: np.ndarray = rng.randn(output_dim, input_dim) * scale
+        else:
+            # Backward compatible - use global state if no seed
+            self.W: np.ndarray = np.random.randn(output_dim, input_dim) * scale
 
     def project(self, x: np.ndarray) -> np.ndarray:
         """

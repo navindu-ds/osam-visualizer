@@ -85,6 +85,85 @@ class TestProjectionMatrix:
         result = proj.project(x)
         assert isinstance(result, np.ndarray)
 
+    # =========================================================================
+    # Seed reproducibility tests (added for bugfix: projection matrix persistence)
+    # Related to issue https://github.com/navindu-ds/osam-visualizer/issues/2
+    # =========================================================================
+
+    def test_seed_reproducibility_same_seed_identical_matrices(self):
+        """Test that same seed produces identical matrices."""
+        proj1 = ProjectionMatrix(input_dim=384, output_dim=8, seed=42)
+        proj2 = ProjectionMatrix(input_dim=384, output_dim=8, seed=42)
+        
+        # Matrices should be bit-for-bit identical
+        np.testing.assert_array_equal(proj1.W, proj2.W)
+
+    def test_seed_reproducibility_different_seeds_different_matrices(self):
+        """Test that different seeds produce different matrices."""
+        proj1 = ProjectionMatrix(input_dim=384, output_dim=8, seed=42)
+        proj2 = ProjectionMatrix(input_dim=384, output_dim=8, seed=43)
+        
+        # Matrices should be different (extremely unlikely to be equal by chance)
+        assert not np.allclose(proj1.W, proj2.W)
+
+    def test_seed_no_global_state_pollution(self):
+        """Test that using seed does not affect global numpy random state."""
+        # Set global random state
+        np.random.seed(100)
+        state_before = np.random.get_state()
+        
+        # Create projection matrix with seed (should use isolated RandomState)
+        proj = ProjectionMatrix(input_dim=384, output_dim=8, seed=42)
+        
+        # Global random state should be unchanged
+        state_after = np.random.get_state()
+        
+        # Compare state arrays (state[1] is the actual state array)
+        np.testing.assert_array_equal(state_before[1], state_after[1])
+        assert state_before[0] == state_after[0]  # Algorithm name
+        assert state_before[2] == state_after[2]  # Position
+
+    def test_seed_none_uses_global_state(self):
+        """Test that seed=None uses global random state (backward compatible)."""
+        # Set global seed
+        np.random.seed(42)
+        proj1 = ProjectionMatrix(input_dim=10, output_dim=5, seed=None)
+        
+        # Reset global seed to same value
+        np.random.seed(42)
+        proj2 = ProjectionMatrix(input_dim=10, output_dim=5, seed=None)
+        
+        # Should produce same matrices (using global state)
+        np.testing.assert_array_almost_equal(proj1.W, proj2.W)
+
+    def test_seed_different_dimensions_deterministic(self):
+        """Test that same seed with different dimensions is deterministic."""
+        # Same seed, different output dimensions
+        proj1_8x384 = ProjectionMatrix(input_dim=384, output_dim=8, seed=42)
+        proj2_8x384 = ProjectionMatrix(input_dim=384, output_dim=8, seed=42)
+        proj1_12x384 = ProjectionMatrix(input_dim=384, output_dim=12, seed=42)
+        proj2_12x384 = ProjectionMatrix(input_dim=384, output_dim=12, seed=42)
+        
+        # Same seed + same dimensions = identical matrices
+        np.testing.assert_array_equal(proj1_8x384.W, proj2_8x384.W)
+        np.testing.assert_array_equal(proj1_12x384.W, proj2_12x384.W)
+        
+        # Same seed + different dimensions = different matrices (different shapes)
+        assert proj1_8x384.W.shape != proj1_12x384.W.shape
+
+    def test_seed_derived_seeds_produce_different_matrices(self):
+        """Test that derived seeds (base, base+1, base+2) produce different matrices."""
+        base_seed = 42
+        
+        W_k = ProjectionMatrix(input_dim=384, output_dim=8, seed=base_seed)
+        W_v = ProjectionMatrix(input_dim=384, output_dim=8, seed=base_seed + 1)
+        W_q = ProjectionMatrix(input_dim=384, output_dim=8, seed=base_seed + 2)
+        
+        # All three should be different
+        assert not np.allclose(W_k.W, W_v.W)
+        assert not np.allclose(W_v.W, W_q.W)
+        assert not np.allclose(W_k.W, W_q.W)
+
 
 class TestL2Normalization:
     """Test L2 normalization function."""

@@ -25,6 +25,12 @@ projections:
   # Following LoRA practice: small Gaussian init to ensure stability
   # Paper notes: L2 normalization layer keeps magnitudes in check
   init_scale: 0.01
+  
+  # Random seed for projection matrix initialization (reproducibility)
+  # Same seed ensures consistent W_k, W_v, W_q across resets
+  # Aligns with paper's assumption of fixed, trained projections
+  # Set to null for non-deterministic initialization (random each session)
+  projection_seed: 42
 
 # Sentence Encoder (per functionality.md)
 encoder:

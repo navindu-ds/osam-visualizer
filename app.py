@@ -14,7 +14,9 @@ Run with:
 from __future__ import annotations
 
 import streamlit as st
+import streamlit.components.v1 as components
 import yaml
+import numpy as np
 from pathlib import Path
 
 from src.memory_state import OSAMState
@@ -187,10 +189,249 @@ def _apply_reset(new_r: int) -> None:
 
 
 # ---------------------------------------------------------------------------
-# [TASK: heatmap-component]
-# render_heatmap(S, last_diff, step_count, config) → st.components.v1.html
-# — to be implemented in task 5
+# Heatmap Component — Custom HTML/CSS visualization
 # ---------------------------------------------------------------------------
+
+
+def _value_to_hex(value: float, vmax: float) -> str:
+    """
+    Map a scalar value to RdBu diverging colorscale hex color.
+
+    Uses a blue-white-red diverging scale where:
+    - Negative values → shades of blue (#2166ac to #f7f7f7)
+    - Zero → neutral white/gray (#f7f7f7)
+    - Positive values → shades of red (#f7f7f7 to #b2182b)
+
+    Args:
+        value: Scalar value to map (will be clipped to [-vmax, +vmax])
+        vmax: Maximum absolute value for normalization
+
+    Returns:
+        Hex color string (e.g., "#2166ac")
+    """
+    # Normalize to [-1, 1] range
+    normed = np.clip(value / vmax, -1.0, 1.0)
+
+    if normed < 0:
+        # Blue side: interpolate from dark blue to white
+        t = (normed + 1.0)  # maps [-1, 0] → [0, 1]
+        # Dark blue RGB: (33, 102, 172) → White RGB: (247, 247, 247)
+        r = int(33 + t * (247 - 33))
+        g = int(102 + t * (247 - 102))
+        b = int(172 + t * (247 - 172))
+    else:
+        # Red side: interpolate from white to dark red
+        t = normed  # maps [0, 1] → [0, 1]
+        # White RGB: (247, 247, 247) → Dark red RGB: (178, 24, 43)
+        r = int(247 + t * (178 - 247))
+        g = int(247 + t * (24 - 247))
+        b = int(247 + t * (43 - 247))
+
+    return f"#{r:02x}{g:02x}{b:02x}"
+
+
+def _render_empty_state_table(r: int) -> str:
+    """
+    Generate HTML for empty state heatmap (all zeros).
+
+    Args:
+        r: Matrix dimension (r×r)
+
+    Returns:
+        HTML string with faint grid and empty state message
+    """
+    html = '<table class="heatmap empty">\n'
+    for i in range(r):
+        html += "  <tr>\n"
+        for j in range(r):
+            html += '    <td class="cell" style="background-color: #f9f9f9; color: #ccc;">0.000</td>\n'
+        html += "  </tr>\n"
+    html += "</table>\n"
+    html += '<div class="empty-message">Memory is empty — insert a sentence to begin</div>\n'
+    return html
+
+
+def _render_color_legend(vmax: float) -> str:
+    """
+    Generate HTML for color legend bar with min/max labels.
+
+    Args:
+        vmax: Maximum absolute value in the matrix
+
+    Returns:
+        HTML string with gradient bar and labels
+    """
+    return f"""
+<div class="legend-container">
+    <div class="legend-bar"></div>
+    <div class="legend-labels">
+        <span>-{vmax:.3f}</span>
+        <span>0.000</span>
+        <span>+{vmax:.3f}</span>
+    </div>
+</div>
+"""
+
+
+def render_heatmap(
+    S: np.ndarray,
+    last_diff: np.ndarray | None,
+    step_count: int,
+    config: dict,
+) -> None:
+    """
+    Render the memory matrix as a custom HTML/CSS heatmap.
+
+    Features:
+    - RdBu diverging colorscale (blue=negative, white=zero, red=positive)
+    - Pulse animation: changed cells flash gold→final color over 400ms
+    - Empty state message when matrix is all zeros
+    - Step counter caption
+    - Color legend with value range
+
+    Args:
+        S: Memory matrix (r×r numpy array)
+        last_diff: Difference matrix from last update (for pulse animation)
+        step_count: Number of sentences written (for caption)
+        config: Configuration dict with visualization settings
+
+    Side effects:
+        - Renders HTML via st.components.v1.html()
+        - Clears st.session_state.last_diff after rendering (prevents re-animation)
+    """
+    r = S.shape[0]
+    vmax = max(abs(S).max(), 1e-6)  # Avoid division by zero
+    is_empty = np.allclose(S, 0.0, atol=1e-9)
+    
+    # Get pulse animation settings from config
+    threshold = config["visualization"]["diff_highlight_threshold"]  # 0.001
+    pulse_ms = config["visualization"]["pulse_duration_ms"]  # 1200
+     
+    # Detect changed cells (where abs(diff) > threshold)
+    changed = (
+        np.abs(last_diff) > threshold
+        if last_diff is not None
+        else np.zeros_like(S, dtype=bool)
+    )
+
+    # CSS styles (with pulse animation)
+    html = f"""
+<style>
+    table.heatmap {{
+        border-collapse: collapse;
+        margin: 20px auto;
+        font-family: monospace;
+    }}
+    
+    td.cell {{
+        width: 60px;
+        height: 60px;
+        text-align: center;
+        vertical-align: middle;
+        border: 1px solid #ddd;
+        font-size: 11px;
+        font-weight: 500;
+    }}
+    
+    /* Pulse animation for changed cells */
+    /* Holds gold color for 40% of duration, then fades to final color */
+    @keyframes pulse {{
+        0% {{
+            background-color: #ffd700;  /* gold highlight */
+        }}
+        40% {{
+            background-color: #ffd700;  /* hold gold */
+        }}
+        100% {{
+            background-color: var(--final-color);  /* fade to final */
+        }}
+    }}
+    
+    td.cell.changed {{
+        animation: pulse {pulse_ms}ms ease-in-out forwards;
+    }}
+    
+    table.heatmap.empty {{
+        opacity: 0.5;
+    }}
+    
+    .empty-message {{
+        text-align: center;
+        color: #999;
+        margin-top: 20px;
+        font-style: italic;
+        font-size: 14px;
+    }}
+    
+    .caption {{
+        text-align: center;
+        color: #666;
+        margin-top: 15px;
+        font-size: 13px;
+        font-weight: 500;
+    }}
+    
+    .legend-container {{
+        margin-top: 30px;
+        text-align: center;
+    }}
+    
+    .legend-bar {{
+        background: linear-gradient(to right, 
+            #2166ac 0%, #67a9cf 25%, #f7f7f7 50%, #ef8a62 75%, #b2182b 100%);
+        height: 20px;
+        width: 320px;
+        margin: 10px auto;
+        border: 1px solid #ddd;
+        border-radius: 3px;
+    }}
+    
+    .legend-labels {{
+        display: flex;
+        justify-content: space-between;
+        width: 320px;
+        margin: 5px auto;
+        font-size: 12px;
+        color: #666;
+        font-family: monospace;
+    }}
+</style>
+"""
+
+    # Build table
+    if is_empty:
+        html += _render_empty_state_table(r)
+    else:
+        html += '<table class="heatmap">\n'
+        for i in range(r):
+            html += "  <tr>\n"
+            for j in range(r):
+                value = S[i, j]
+                color = _value_to_hex(value, vmax)
+                
+                # Apply "changed" class if this cell was updated
+                cell_class = "cell changed" if changed[i, j] else "cell"
+
+                # Use CSS custom property for final color (enables animation)
+                html += f'    <td class="{cell_class}" style="--final-color: {color}; background-color: {color};">'
+                html += f"{value:.3f}</td>\n"
+            html += "  </tr>\n"
+        html += "</table>\n"
+
+    # Add caption
+    sentence_plural = "sentence" if step_count == 1 else "sentences"
+    html += f'<div class="caption">Step {step_count} — {step_count} {sentence_plural} written</div>\n'
+
+    # Add color legend
+    html += _render_color_legend(vmax)
+
+    # Render with dynamic height (adjust based on r)
+    # Base: table (60px/row) + margins (60px) + caption (40px) + legend (80px) = ~240px overhead
+    height = (r * 60) + 240
+    components.html(html, height=height, scrolling=False)
+
+    # Clear diff to prevent re-animation on next rerun
+    st.session_state.last_diff = None
 
 
 # ---------------------------------------------------------------------------
@@ -342,27 +583,18 @@ def main() -> None:
     st.divider()
 
     # ------------------------------------------------------------------
-    # Two-column layout: main panel (70 %) | side panel (30 %)
+    # Two-column layout: Input & Registry (35%) | Matrix Visualization (65%)
     # ------------------------------------------------------------------
 
-    col_main, col_side = st.columns([7, 3], gap="large")
+    col_left, col_right = st.columns([35, 65], gap="large")
 
     # ---------------------------------------------------------------
-    # Main panel
+    # Left column: Input & Sentence Registry
     # ---------------------------------------------------------------
-    with col_main:
+    with col_left:
 
         # [TASK: input-area] — text input, buttons (validate on click)
         st.subheader("Input")
-
-        # Show success feedback if last insert completed
-        if st.session_state.last_insert_step is not None:
-            st.success(
-                f"Sentence inserted!"
-            )
-            # Clear the flag so it doesn't show on every rerun
-            st.session_state.last_insert_step = None
-            st.session_state.last_insert_count = None
 
         # Text area for sentence entry
         user_input = st.text_area(
@@ -453,21 +685,57 @@ def main() -> None:
                 else:
                     # [TASK: retrieve-flow] — to be implemented in Step 2.7
                     st.warning("Retrieve flow not yet implemented (Step 2.7).")
+        
+        # Show success feedback after buttons (same location as error messages)
+        if st.session_state.last_insert_step is not None:
+            st.success(f"Sentence inserted")
+            # Clear the flag so it doesn't show on every rerun
+            st.session_state.last_insert_step = None
+            st.session_state.last_insert_count = None
 
         st.write("---")
 
-        # [TASK: heatmap-component] — memory matrix heatmap
-
-        # [TASK: retrieve-flow] — retrieval results area
-
-    # ---------------------------------------------------------------
-    # Side panel
-    # ---------------------------------------------------------------
-    with col_side:
-
-        # [TASK: side-panel] — sentence registry list
+        # Sentence Registry - shows all stored sentences
         st.subheader("Sentence Registry")
-        st.caption("Stored sentences will appear here after your first Insert.")
+        
+        registry = st.session_state.registry
+        num_entries = len(registry.entries)
+        
+        # Header with count
+        st.caption(f"**{num_entries} / {_MAX_SENTENCES}** stored")
+        
+        if num_entries == 0:
+            st.info("No sentences stored yet. Insert a sentence to begin building memory.")
+        else:
+            # Display entries in reverse order (most recent first)
+            st.write("")  # Small spacing
+            
+            for entry in reversed(registry.entries):
+                step_num = entry.step_index + 1  # 0-indexed internally, display as 1-indexed
+                text = entry.text
+                
+                # Truncate long sentences with ellipsis
+                display_text = text if len(text) <= 60 else text[:57] + "..."
+                
+                # Display with step number and text
+                st.markdown(f"**#{step_num}** · {display_text}")
+
+        # [TASK: retrieve-flow] — retrieval results area will go here
+
+    # ---------------------------------------------------------------
+    # Right column: Memory Matrix Visualization
+    # ---------------------------------------------------------------
+    with col_right:
+
+        # Memory matrix heatmap visualization
+        st.subheader("Memory Matrix")
+        render_heatmap(
+            S=st.session_state.state.S,
+            last_diff=st.session_state.last_diff,
+            step_count=st.session_state.ssw.step_counter,
+            config=CONFIG,
+        )
+
 
 
 if __name__ == "__main__":

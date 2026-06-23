@@ -52,7 +52,7 @@ storage:
   
   # Maximum input length per sentence (characters)
   # Enforced at input validation stage; longer inputs rejected with clear error
-  max_input_length: 500
+  max_input_length: 300
 
 # Retrieval Parameters (per functionality.md Section 5)
 retrieval:
@@ -69,11 +69,12 @@ visualization:
   colorscale: "RdBu"
   
   # Duration (milliseconds) for write-pulse animation on matrix update
-  pulse_duration_ms: 400
+  # Animation sequence: gold hold (40%) → fade to final color (60%)
+  pulse_duration_ms: 2000
   
   # Threshold for highlighting changed cells in diff heatmap
   # Cells with |diff| > threshold are visually emphasized
-  diff_highlight_threshold: 0.01
+  diff_highlight_threshold: 0.001
 
 # Testing Parameters (used in pytest fixtures)
 testing:

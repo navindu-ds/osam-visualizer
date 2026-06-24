@@ -581,15 +581,6 @@ def render_heatmap(
 
 
 # ---------------------------------------------------------------------------
-# Main Streamlit Application
-# ---------------------------------------------------------------------------
-# [TASK: side-panel]
-# render_registry(registry, last_result_step_indices) — scrollable HTML panel
-# — to be implemented in task 8
-# ---------------------------------------------------------------------------
-
-
-# ---------------------------------------------------------------------------
 # Main application entry point
 # ---------------------------------------------------------------------------
 
@@ -700,7 +691,7 @@ def main() -> None:
             if st.button("Reset memory", key="reset_r_btn", type="primary"):
                 st.session_state.confirm_reset = True
         else:
-            # Step 2: explicit confirmation
+            # Requesting explicit confirmation for the reset
             st.error(
                 "**Confirm reset** — this will permanently clear the memory matrix "
                 "and the sentence registry. This cannot be undone."
@@ -734,7 +725,6 @@ def main() -> None:
     # ---------------------------------------------------------------
     with col_left:
 
-        # [TASK: input-area] — text input, buttons (validate on click)
         st.subheader("Input")
 
         # Text area for sentence entry
@@ -796,7 +786,7 @@ def main() -> None:
                             step_index=metadata["step_index"],
                         )
 
-                        # Save diff for heatmap pulse animation (Step 2.5)
+                        # Save diff for heatmap pulse animation
                         st.session_state.last_diff = metadata["state_diff"]
 
                         # Clear stale retrieval results
@@ -930,13 +920,13 @@ def main() -> None:
             # No data — show disabled-style info
             st.caption("Reset memory clears all stored sentences and the matrix.")
         elif not st.session_state.confirm_manual_reset:
-            # Step 1: Show reset button (centered with adjusted column ratios)
+            # Show reset button (centered with adjusted column ratios)
             _, c_btn, _ = st.columns([2, 1, 2])
             if c_btn.button("Reset Memory", key="manual_reset_btn", type="secondary", use_container_width=True):
                 st.session_state.confirm_manual_reset = True
                 st.rerun()
         else:
-            # Step 2: Confirmation prompt
+            # Confirmation prompt
             st.warning(
                 f"**Confirm reset** — This will permanently clear the memory matrix "
                 f"and all {st.session_state.ssw.step_counter} stored sentence(s). "

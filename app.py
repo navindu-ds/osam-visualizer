@@ -251,6 +251,67 @@ def _apply_reset(new_r: int) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Retrieval Results Display — Helper Functions
+# ---------------------------------------------------------------------------
+
+
+def _score_to_bar(score: float, width: int = 10) -> str:
+    """
+    Convert cosine similarity score to visual bar using Unicode blocks.
+    
+    Cosine similarity ranges from -1 (anti-parallel) to +1 (parallel).
+    We normalize to [0, 1] for display purposes (negative scores become 0).
+    
+    Args:
+        score: Cosine similarity score in [-1, 1]
+        width: Number of blocks in the bar (default 10)
+    
+    Returns:
+        String with filled (█) and empty (░) Unicode blocks
+    """
+    # Normalize score from [-1, 1] to [0, 1]
+    normalized = (score + 1.0) / 2.0
+    normalized = max(0.0, min(1.0, normalized))  # Clamp to [0, 1]
+    
+    # Calculate filled blocks
+    filled = int(normalized * width)
+    
+    # Return bar with filled and empty blocks
+    return "█" * filled + "░" * (width - filled)
+
+
+def _render_result_item(rank: int, result: dict, is_top: bool = False) -> None:
+    """
+    Render a single retrieval result with rank, text, score, and visual bar.
+    
+    Args:
+        rank: Result rank (1-indexed)
+        result: Result dict with keys: text, score, step_index
+        is_top: Whether this is the top result (for emphasis)
+    """
+    text = result["text"]
+    score = result["score"]
+    step_index = result["step_index"]
+    
+    # Create container for the result
+    if is_top:
+        # Top result gets special emphasis with info container
+        with st.container():
+            st.markdown(f"**🥇 #{rank}** · Sentence #{step_index + 1}")
+            st.info(f"**{text}**")
+            st.caption(f"Score: **{score:.2f}** {_score_to_bar(score)}")
+    else:
+        # Regular results
+        with st.container():
+            st.markdown(f"**#{rank}** · Sentence #{step_index + 1}")
+            st.markdown(f"{text}")
+            st.caption(f"Score: {score:.2f} {_score_to_bar(score)}")
+    
+    # Small spacing between results
+    st.write("")
+
+
+# ---------------------------------------------------------------------------
 # Heatmap Component — Custom HTML/CSS visualization
 # ---------------------------------------------------------------------------
 
@@ -497,12 +558,7 @@ def render_heatmap(
 
 
 # ---------------------------------------------------------------------------
-# [TASK: retrieve-flow]
-# render_results(results, last_query) — ranked list with score bars
-# — to be implemented in task 7
-# ---------------------------------------------------------------------------
-
-
+# Main Streamlit Application
 # ---------------------------------------------------------------------------
 # [TASK: side-panel]
 # render_registry(registry, last_result_step_indices) — scrollable HTML panel
@@ -745,8 +801,33 @@ def main() -> None:
                 if len(user_input.strip()) == 0:
                     st.error("⚠️ Please enter a query before retrieving.")
                 else:
-                    # [TASK: retrieve-flow] — to be implemented in Step 2.7
-                    st.warning("Retrieve flow not yet implemented (Step 2.7).")
+                    # Check if registry is empty (avoid wasted encoding work)
+                    if len(st.session_state.registry.entries) == 0:
+                        st.info(
+                            "Memory is empty. Insert sentences first to query them."
+                        )
+                    else:
+                        # Execute retrieval with loading spinner
+                        with st.spinner("Searching memory..."):
+                            # Encode query
+                            query_embedding = st.session_state.ssw.encoder.encode(user_input)
+                            
+                            # Search registry
+                            results = st.session_state.registry.search(
+                                query_embedding=query_embedding,
+                                state=st.session_state.state,
+                                top_k=st.session_state.top_k
+                            )
+                        
+                        # Store results and query in session state
+                        st.session_state.last_results = results
+                        st.session_state.last_query = user_input
+                        
+                        # Clear input field for next entry
+                        st.session_state.current_input = ""
+                        
+                        # Rerun to show results
+                        st.rerun()
         
         # Show success feedback after buttons (same location as error messages)
         if st.session_state.last_insert_step is not None:
@@ -756,6 +837,25 @@ def main() -> None:
             st.session_state.last_insert_count = None
 
         st.write("---")
+
+        # Retrieval Results Section (only visible when results exist)
+        if st.session_state.last_results is not None:
+            st.subheader("Retrieval Results")
+            
+            # Query header
+            st.caption(f"Query: \"{st.session_state.last_query}\"")
+            
+            # Results list
+            if len(st.session_state.last_results) == 0:
+                st.info("No results found.")
+            else:
+                st.write("")  # Small spacing
+                
+                # Render each result
+                for idx, result in enumerate(st.session_state.last_results, start=1):
+                    _render_result_item(idx, result, is_top=(idx == 1))
+            
+            st.write("---")
 
         # Sentence Registry - shows all stored sentences
         st.subheader("Sentence Registry")
@@ -781,8 +881,6 @@ def main() -> None:
                 
                 # Display with step number and text
                 st.markdown(f"**#{step_num}** · {display_text}")
-
-        # [TASK: retrieve-flow] — retrieval results area will go here
 
     # ---------------------------------------------------------------
     # Right column: Memory Matrix Visualization

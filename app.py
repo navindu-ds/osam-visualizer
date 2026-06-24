@@ -1067,12 +1067,101 @@ def main() -> None:
             if selected_entry is not None:
                 # Show header indicating which sentence is being viewed
                 step_num = selected_entry["step_index"] + 1
-                st.caption(f"Viewing change in memory matrix after adding sentence **#{step_num}**: \"{selected_entry['text'][:50]}...\"" if len(selected_entry['text']) > 50 else f"📊 Viewing change for sentence **#{step_num}**: \"{selected_entry['text']}\"") # Small spacing
+                st.caption(f"📊 Viewing change for sentence **#{step_num}**: \"{selected_entry['text'][:50]}...\"" if len(selected_entry['text']) > 50 else f"📊 Viewing change for sentence **#{step_num}**: \"{selected_entry['text']}\"")
+                st.write("")  # Small spacing
                 
-                # Render the change heatmap
+                # Beta used at this write step (stored in write_history on insert)
+                step_beta = selected_entry["beta"]
+                st.caption(f"Write strength at this step: $\\boldsymbol{{\\beta_{{{step_num}}}}} = {step_beta:.2f}$")
+                
+                # Component selector (Phase 2: decomposition view)
+                # For first sentence (step 0), S_{t-1} is zeros, so Retention and Erase are nil
+                is_first_sentence = selected_entry["step_index"] == 0
+                
+                if is_first_sentence:
+                    component_options = ["Write New Value / Final State / Net Change"]
+                else:
+                    component_options = ["Retention", "Erase Prediction", "Write New Value", "Final State", "Net Change"]
+                
+                component_view = st.radio(
+                    "Component view:",
+                    component_options,
+                    horizontal=True,
+                    help="View different components of the memory update equation"
+                )
+                
+                # Compute selected component matrix and formula
+                # step_index is 0-based; step_num = step_index + 1 is the post-write state S_t
+                step_index = selected_entry["step_index"]
+                S_before = selected_entry["S_before"]
+                k = selected_entry["k"]
+                v = selected_entry["v"]
+                beta = step_beta
+                
+                if component_view == "Net Change":
+                    matrix = selected_entry["diff"]
+                    formula = f"S_{{{step_num}}} - S_{{{step_index}}}"
+                    caption = f"Net change to memory from sentence #{step_num}"
+                    
+                elif component_view == "Retention":
+                    matrix = (1 - beta) * S_before
+                    formula = (
+                        f"\\text{{Diag}}(\\lambda_{{{step_num}}}) S_{{{step_index}}} "
+                        f"= (1-\\beta_{{{step_num}}}) S_{{{step_index}}}"
+                    )
+                    caption = "Retention component (scaled old state)"
+                    
+                elif component_view == "Erase Prediction":
+                    prediction = S_before @ k
+                    matrix = -beta * np.outer(prediction, k)
+                    formula = (
+                        f"-\\text{{Diag}}(\\beta_{{{step_num}}}) S_{{{step_index}}} "
+                        f"\\mathbf{{k}}_{{{step_num}}} (\\mathbf{{k}}_{{{step_num}}})^\\top"
+                    )
+                    caption = "Erase prediction component"
+                    
+                elif component_view == "Write New Value":
+                    matrix = beta * np.outer(v, k)
+                    formula = (
+                        f"+\\text{{Diag}}(\\beta_{{{step_num}}}) \\mathbf{{v}}_{{{step_num}}} "
+                        f"(\\mathbf{{k}}_{{{step_num}}})^\\top"
+                    )
+                    caption = "Write new value component"
+
+                elif component_view == "Write New Value / Final State / Net Change":
+                    matrix = selected_entry["diff"]
+                    formula = (
+                        f"S_{{{step_num}}} = "
+                        f"\\text{{Diag}}(\\beta_{{{step_num}}}) \\mathbf{{v}}_{{{step_num}}} "
+                        f"(\\mathbf{{k}}_{{{step_num}}})^\\top"
+                    )
+                    caption = f"Net change to memory from sentence #{step_num}"
+                    
+                else:  # Final State (S_t)
+                    # Compute S_t as sum of three components
+                    retention = (1 - beta) * S_before
+                    prediction = S_before @ k
+                    erase = -beta * np.outer(prediction, k)
+                    write = beta * np.outer(v, k)
+                    matrix = retention + erase + write
+                    formula = (
+                        f"S_{{{step_num}}} = \\text{{Diag}}(\\lambda_{{{step_num}}}) S_{{{step_index}}} "
+                        f"- \\text{{Diag}}(\\beta_{{{step_num}}}) S_{{{step_index}}} "
+                        f"\\mathbf{{k}}_{{{step_num}}} (\\mathbf{{k}}_{{{step_num}}})^\\top "
+                        f"+ \\text{{Diag}}(\\beta_{{{step_num}}}) \\mathbf{{v}}_{{{step_num}}} "
+                        f"(\\mathbf{{k}}_{{{step_num}}})^\\top"
+                    )
+                    caption = f"Final memory state after sentence #{step_num} (sum of 3 components)"
+                
+                # Display the formula
+                st.latex(formula)
+                st.write("")  # Small spacing
+                
+                # Render the selected component heatmap
                 render_change_heatmap(
-                    matrix=selected_entry["diff"],
+                    matrix=matrix,
                     step_index=selected_entry["step_index"],
+                    caption=caption,
                 )
             else:
                 # Fallback if entry not found 

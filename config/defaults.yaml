@@ -25,6 +25,12 @@ projections:
   # Following LoRA practice: small Gaussian init to ensure stability
   # Paper notes: L2 normalization layer keeps magnitudes in check
   init_scale: 0.01
+  
+  # Random seed for projection matrix initialization (reproducibility)
+  # Same seed ensures consistent W_k, W_v, W_q across resets
+  # Aligns with paper's assumption of fixed, trained projections
+  # Set to null for non-deterministic initialization (random each session)
+  projection_seed: 42
 
 # Sentence Encoder (per functionality.md)
 encoder:
@@ -52,7 +58,7 @@ storage:
   
   # Maximum input length per sentence (characters)
   # Enforced at input validation stage; longer inputs rejected with clear error
-  max_input_length: 500
+  max_input_length: 300
 
 # Retrieval Parameters (per functionality.md Section 5)
 retrieval:
@@ -69,11 +75,12 @@ visualization:
   colorscale: "RdBu"
   
   # Duration (milliseconds) for write-pulse animation on matrix update
-  pulse_duration_ms: 400
+  # Animation sequence: gold hold (40%) → fade to final color (60%)
+  pulse_duration_ms: 2000
   
   # Threshold for highlighting changed cells in diff heatmap
   # Cells with |diff| > threshold are visually emphasized
-  diff_highlight_threshold: 0.01
+  diff_highlight_threshold: 0.001
 
 # Testing Parameters (used in pytest fixtures)
 testing:

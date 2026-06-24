@@ -26,6 +26,7 @@ import pytest
 from src.memory_state import OSAMState
 from src.writing_strategies import SequenceStateWrite
 from src.retrieval import SentenceRegistry
+from src.encoder import ProjectionMatrix
 
 
 class TestCrossModuleConfig:
@@ -347,3 +348,172 @@ class TestMemoryAccumulation:
         assert not np.allclose(state.get_state(), np.zeros((8, 8))), (
             "State must be non-zero after writing a sentence"
         )
+
+
+@pytest.mark.integration
+class TestSeedBasedProjectionConsistency:
+    """
+    Tests verifying seeded projection matrices produce consistent behavior.
+
+    These tests validate the bugfix for projection matrix re-initialization:
+    - Same seed → identical projections after reset
+    - Dimension changes with same seed recover original projections
+    - Full pipeline (SSW + Registry) produces reproducible results
+
+    Marked as @pytest.mark.integration because they load the real sentence
+    encoder on first use.
+    """
+
+    def test_same_sentence_identical_projections_after_reset(self):
+        """Same sentence produces identical key/value vectors after reset (seeded).
+
+        Validates the core bugfix: when projection matrices use seeds, the same
+        sentence produces bit-for-bit identical projections even after resetting
+        the memory state and SSW counter. This ensures consistent memory behavior.
+        """
+        # Create SSW with seeded projections
+        ssw = SequenceStateWrite()
+        ssw.W_k = ProjectionMatrix(input_dim=384, output_dim=8, seed=42)
+        ssw.W_v = ProjectionMatrix(input_dim=384, output_dim=8, seed=43)
+
+        state = OSAMState(r=8, beta=0.1)
+        text = "Hello world"
+
+        # First execution
+        _, metadata1 = ssw.execute(text, state)
+        key1 = metadata1["key"]
+        value1 = metadata1["value"]
+        state_diff1 = metadata1["state_diff"]
+
+        # Reset state and SSW counter (simulating app reset button)
+        state.reset()
+        ssw.reset_counter()
+
+        # Recreate projections with SAME seeds
+        ssw.W_k = ProjectionMatrix(input_dim=384, output_dim=8, seed=42)
+        ssw.W_v = ProjectionMatrix(input_dim=384, output_dim=8, seed=43)
+
+        # Second execution - should be IDENTICAL
+        _, metadata2 = ssw.execute(text, state)
+        key2 = metadata2["key"]
+        value2 = metadata2["value"]
+        state_diff2 = metadata2["state_diff"]
+
+        # Verify bit-for-bit identical projections
+        np.testing.assert_array_equal(key1, key2)
+        np.testing.assert_array_equal(value1, value2)
+        np.testing.assert_array_equal(state_diff1, state_diff2)
+
+    def test_dimension_change_recovers_original_projections(self):
+        """Changing dimension and reverting recovers original projection behavior.
+
+        Validates that using the same base seed for different dimensions produces
+        deterministic results, and reverting to a previous dimension (r=8 → r=12 → r=8)
+        recovers the exact original projections. This ensures dimension changes
+        don't permanently alter projection behavior.
+        """
+        base_seed = 42
+        text = "Test sentence"
+
+        # r=8 first time
+        ssw_8a = SequenceStateWrite()
+        ssw_8a.W_k = ProjectionMatrix(input_dim=384, output_dim=8, seed=base_seed)
+        ssw_8a.W_v = ProjectionMatrix(input_dim=384, output_dim=8, seed=base_seed + 1)
+
+        state_8a = OSAMState(r=8, beta=0.1)
+        _, metadata_8a = ssw_8a.execute(text, state_8a)
+
+        # r=12 (different dimension)
+        ssw_12 = SequenceStateWrite()
+        ssw_12.W_k = ProjectionMatrix(input_dim=384, output_dim=12, seed=base_seed)
+        ssw_12.W_v = ProjectionMatrix(input_dim=384, output_dim=12, seed=base_seed + 1)
+
+        state_12 = OSAMState(r=12, beta=0.1)
+        _, metadata_12 = ssw_12.execute(text, state_12)
+
+        # Back to r=8 (should recover original)
+        ssw_8b = SequenceStateWrite()
+        ssw_8b.W_k = ProjectionMatrix(input_dim=384, output_dim=8, seed=base_seed)
+        ssw_8b.W_v = ProjectionMatrix(input_dim=384, output_dim=8, seed=base_seed + 1)
+
+        state_8b = OSAMState(r=8, beta=0.1)
+        _, metadata_8b = ssw_8b.execute(text, state_8b)
+
+        # r=8 (first) and r=8 (after r=12) should be identical
+        np.testing.assert_array_equal(metadata_8a["key"], metadata_8b["key"])
+        np.testing.assert_array_equal(metadata_8a["value"], metadata_8b["value"])
+        np.testing.assert_array_equal(metadata_8a["state_diff"], metadata_8b["state_diff"])
+
+        # r=12 should be different (different shape)
+        assert metadata_12["key"].shape == (12,)
+        assert metadata_8a["key"].shape == (8,)
+
+    def test_retrieval_scores_identical_after_reset_with_seeds(self):
+        """Retrieval scores are identical after reset (seeded projections).
+
+        Validates the full pipeline consistency: when SSW and Registry use seeded
+        projections, the entire write → retrieve cycle produces exactly reproducible
+        results. This ensures the semantic space remains consistent across resets,
+        fixing the retrieval mechanism that was broken by random re-initialization.
+        """
+        base_seed = 42
+
+        # Setup with seeded projections
+        ssw = SequenceStateWrite()
+        ssw.W_k = ProjectionMatrix(input_dim=384, output_dim=8, seed=base_seed)
+        ssw.W_v = ProjectionMatrix(input_dim=384, output_dim=8, seed=base_seed + 1)
+
+        registry = SentenceRegistry()
+        registry.W_q = ProjectionMatrix(input_dim=384, output_dim=8, seed=base_seed + 2)
+
+        state = OSAMState(r=8, beta=0.1)
+
+        # Write sentences
+        sentences = ["Hello world", "Goodbye world", "Test sentence"]
+        for sentence in sentences:
+            state, metadata = ssw.execute(sentence, state)
+            registry.store(
+                text=metadata["text"],
+                embedding=metadata["embedding"],
+                key=metadata["key"],
+                value=metadata["value"],
+                step_index=metadata["step_index"],
+            )
+
+        # Query
+        query_emb = ssw.encoder.encode("Hello")
+        results1 = registry.search(query_emb, state, top_k=3)
+        scores1 = [r["score"] for r in results1]
+        texts1 = [r["text"] for r in results1]
+
+        # Reset everything
+        state.reset()
+        registry.clear()
+        ssw.reset_counter()
+
+        # Recreate with SAME seeds
+        ssw.W_k = ProjectionMatrix(input_dim=384, output_dim=8, seed=base_seed)
+        ssw.W_v = ProjectionMatrix(input_dim=384, output_dim=8, seed=base_seed + 1)
+        registry.W_q = ProjectionMatrix(input_dim=384, output_dim=8, seed=base_seed + 2)
+
+        # Re-write same sentences
+        for sentence in sentences:
+            state, metadata = ssw.execute(sentence, state)
+            registry.store(
+                text=metadata["text"],
+                embedding=metadata["embedding"],
+                key=metadata["key"],
+                value=metadata["value"],
+                step_index=metadata["step_index"],
+            )
+
+        # Query again
+        query_emb = ssw.encoder.encode("Hello")
+        results2 = registry.search(query_emb, state, top_k=3)
+        scores2 = [r["score"] for r in results2]
+        texts2 = [r["text"] for r in results2]
+
+        # Scores should be IDENTICAL (exact reproducibility)
+        np.testing.assert_array_almost_equal(scores1, scores2, decimal=10)
+        # Result order should be identical
+        assert texts1 == texts2

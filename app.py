@@ -257,27 +257,47 @@ def _apply_reset(new_r: int) -> None:
 
 def _score_to_bar(score: float, width: int = 10) -> str:
     """
-    Convert cosine similarity score to visual bar using Unicode blocks.
+    Convert cosine similarity score to visual bidirectional bar using Unicode blocks.
     
     Cosine similarity ranges from -1 (anti-parallel) to +1 (parallel).
-    We normalize to [0, 1] for display purposes (negative scores become 0).
+    Bar is center-anchored: negative scores extend left, positive extend right.
     
     Args:
         score: Cosine similarity score in [-1, 1]
-        width: Number of blocks in the bar (default 10)
+        width: Number of blocks in the bar (default 10, split evenly left/right)
     
     Returns:
-        String with filled (█) and empty (░) Unicode blocks
+        String with center marker | and filled (█) and empty (░) Unicode blocks
+    
+    Examples:
+        score = -1.0 → "█████|░░░░░" (full negative)
+        score =  0.0 → "░░░░░|░░░░░" (neutral)
+        score = +1.0 → "░░░░░|█████" (full positive)
     """
-    # Normalize score from [-1, 1] to [0, 1]
-    normalized = (score + 1.0) / 2.0
-    normalized = max(0.0, min(1.0, normalized))  # Clamp to [0, 1]
+    # Clamp score to valid range
+    score = max(-1.0, min(1.0, score))
     
-    # Calculate filled blocks
-    filled = int(normalized * width)
+    # Half-width for each side
+    half_width = width // 2
     
-    # Return bar with filled and empty blocks
-    return "█" * filled + "░" * (width - filled)
+    if score < 0:
+        # Negative score: fill blocks on the left side
+        magnitude = abs(score)  # 0 to 1
+        filled_left = int(magnitude * half_width)
+        empty_left = half_width - filled_left
+        # Left side: empty then filled (reading right to left from center)
+        left_side = "░" * empty_left + "█" * filled_left
+        right_side = "░" * half_width
+    else:
+        # Positive score: fill blocks on the right side
+        magnitude = score  # 0 to 1
+        filled_right = int(magnitude * half_width)
+        empty_right = half_width - filled_right
+        left_side = "░" * half_width
+        # Right side: filled then empty (reading left to right from center)
+        right_side = "█" * filled_right + "░" * empty_right
+    
+    return left_side + "|" + right_side
 
 
 def _render_result_item(rank: int, result: dict, is_top: bool = False) -> None:

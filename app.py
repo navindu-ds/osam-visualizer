@@ -163,6 +163,9 @@ def init_session_state() -> None:
     if "confirm_reset" not in st.session_state:
         st.session_state.confirm_reset = False
 
+    if "confirm_manual_reset" not in st.session_state:
+        st.session_state.confirm_manual_reset = False
+
     if "beta" not in st.session_state:
         st.session_state.beta = _DEFAULT_BETA
 
@@ -563,7 +566,7 @@ def render_heatmap(
 
     # Add caption
     sentence_plural = "sentence" if step_count == 1 else "sentences"
-    html += f'<div class="caption">Step {step_count} — {step_count} {sentence_plural} written</div>\n'
+    html += f'<div class="caption">{step_count} {sentence_plural} written</div>\n'
 
     # Add color legend
     html += _render_color_legend(vmax)
@@ -915,6 +918,41 @@ def main() -> None:
             step_count=st.session_state.ssw.step_counter,
             config=CONFIG,
         )
+
+        # ---------------------------------------------------------------
+        # Standalone Reset Control
+        # ---------------------------------------------------------------
+        
+        # Check if there's any data to reset
+        _has_data = st.session_state.ssw.step_counter > 0 or len(st.session_state.registry.entries) > 0
+        
+        if not _has_data:
+            # No data — show disabled-style info
+            st.caption("Reset memory clears all stored sentences and the matrix.")
+        elif not st.session_state.confirm_manual_reset:
+            # Step 1: Show reset button (centered with adjusted column ratios)
+            _, c_btn, _ = st.columns([2, 1, 2])
+            if c_btn.button("Reset Memory", key="manual_reset_btn", type="secondary", use_container_width=True):
+                st.session_state.confirm_manual_reset = True
+                st.rerun()
+        else:
+            # Step 2: Confirmation prompt
+            st.warning(
+                f"**Confirm reset** — This will permanently clear the memory matrix "
+                f"and all {st.session_state.ssw.step_counter} stored sentence(s). "
+                f"This cannot be undone."
+            )
+            # Center the buttons with padding columns
+            _, c_yes, c_no, _ = st.columns([1, 1, 1, 1])
+            if c_yes.button("Yes, reset", key="manual_confirm_yes_btn", type="primary", use_container_width=True):
+                # Reset with current r (don't change dimension)
+                current_r = st.session_state.state.r
+                _apply_reset(current_r)
+                st.session_state.confirm_manual_reset = False
+                st.rerun()
+            if c_no.button("Cancel", key="manual_confirm_no_btn", use_container_width=True):
+                st.session_state.confirm_manual_reset = False
+                st.rerun()
 
 
 

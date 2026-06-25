@@ -187,6 +187,9 @@ def init_session_state() -> None:
     if "selected_step" not in st.session_state:
         st.session_state.selected_step = None
 
+    if "selected_component_view" not in st.session_state:
+        st.session_state.selected_component_view = "Net Change"
+
 
 # ---------------------------------------------------------------------------
 # Full session reset — rebuilds all stateful objects for a given r.
@@ -257,6 +260,9 @@ def _apply_reset(new_r: int) -> None:
     st.session_state.confirm_reset = False
     st.session_state.write_history = []
     st.session_state.selected_step = None
+    st.session_state.selected_component_view = "Net Change"
+    if "global_component_view" in st.session_state:
+        del st.session_state.global_component_view
     # Note: r_input widget key is NOT set here — after a successful apply/reset,
     # state.r == new_r and the widget already holds new_r, so no sync needed.
 
@@ -452,6 +458,17 @@ def _compute_global_vmax(write_history: list, current_S: np.ndarray) -> float:
             vmax = max(vmax, float(np.max(np.abs(arr))))
 
     return max(vmax, 1e-6)
+
+
+def _resolve_component_view(requested: str, options: list[str]) -> str:
+    """Map a persisted component label to a valid option for the current sentence."""
+    if requested in options:
+        return requested
+    unavailable_fallbacks = {
+        "Retention": "Net Change",
+        "Erase Prediction": "Net Change",
+    }
+    return unavailable_fallbacks.get(requested, options[0])
 
 
 def render_heatmap(
@@ -1115,18 +1132,44 @@ def main() -> None:
                 # Component selector (Phase 2: decomposition view)
                 # For first sentence (step 0), S_{t-1} is zeros, so Retention and Erase are nil
                 is_first_sentence = selected_entry["step_index"] == 0
-                
+
                 if is_first_sentence:
-                    component_options = ["Write New Value / Final State / Net Change"]
+                    component_options = ["Net Change", "Write New Value", "Final State"]
                 else:
-                    component_options = ["Retention", "Erase Prediction", "Write New Value", "Final State", "Net Change"]
-                
+                    component_options = [
+                        "Retention",
+                        "Erase Prediction",
+                        "Write New Value",
+                        "Final State",
+                        "Net Change",
+                    ]
+
+                previous_view = st.session_state.selected_component_view
+                resolved_view = _resolve_component_view(previous_view, component_options)
+                if previous_view not in component_options and previous_view in (
+                    "Retention",
+                    "Erase Prediction",
+                ):
+                    st.caption(
+                        "Retention and Erase are zero at step 0; showing "
+                        f"**{resolved_view}** instead."
+                    )
+
+                if st.session_state.selected_component_view not in component_options:
+                    st.session_state.selected_component_view = resolved_view
+                if "global_component_view" not in st.session_state:
+                    st.session_state.global_component_view = resolved_view
+                elif st.session_state.global_component_view not in component_options:
+                    st.session_state.global_component_view = resolved_view
+
                 component_view = st.radio(
                     "Component view:",
                     component_options,
                     horizontal=True,
-                    help="View different components of the memory update equation"
+                    key="global_component_view",
+                    help="View different components of the memory update equation",
                 )
+                st.session_state.selected_component_view = component_view
                 
                 # Compute selected component matrix and formula
                 # step_index is 0-based; step_num = step_index + 1 is the post-write state S_t
@@ -1166,17 +1209,7 @@ def main() -> None:
                     )
                     caption = "Write new value component"
 
-                elif component_view == "Write New Value / Final State / Net Change":
-                    matrix = selected_entry["diff"]
-                    formula = (
-                        f"S_{{{step_num}}} = "
-                        f"\\text{{Diag}}(\\beta_{{{step_num}}}) \\mathbf{{v}}_{{{step_num}}} "
-                        f"(\\mathbf{{k}}_{{{step_num}}})^\\top"
-                    )
-                    caption = f"Net change to memory from sentence #{step_num}"
-                    
-                else:  # Final State (S_t)
-                    # Compute S_t as sum of three components
+                elif component_view == "Final State":
                     retention = (1 - beta) * S_before
                     prediction = S_before @ k
                     erase = -beta * np.outer(prediction, k)
@@ -1190,6 +1223,10 @@ def main() -> None:
                         f"(\\mathbf{{k}}_{{{step_num}}})^\\top"
                     )
                     caption = f"Final memory state after sentence #{step_num} (sum of 3 components)"
+
+                else:
+                    st.error(f"Unknown component view: {component_view}")
+                    st.stop()
                 
                 # Display the formula
                 st.latex(formula)

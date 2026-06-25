@@ -429,6 +429,7 @@ def _render_color_legend(vmax: float) -> str:
         <span>0.000</span>
         <span>+{vmax:.3f}</span>
     </div>
+    <div class="scale-note">Color scale fixed at ±{vmax:.3f} (max |value| across all steps and components)</div>
 </div>
 """
 
@@ -596,6 +597,13 @@ def render_heatmap(
         color: #666;
         font-family: monospace;
     }}
+
+    .scale-note {{
+        text-align: center;
+        color: #666;
+        margin-top: 8px;
+        font-size: 12px;
+    }}
 </style>
 """
 
@@ -627,8 +635,8 @@ def render_heatmap(
     html += _render_color_legend(vmax)
 
     # Render with dynamic height (adjust based on r)
-    # Base: table (60px/row) + margins (60px) + caption (40px) + legend (80px) = ~240px overhead
-    height = (r * 60) + 240
+    # Base: table (60px/row) + margins (60px) + caption (40px) + legend (100px) = ~260px overhead
+    height = (r * 60) + 260
     components.html(html, height=height, scrolling=False)
 
     # Clear diff to prevent re-animation on next rerun
@@ -714,6 +722,13 @@ def render_change_heatmap(
         color: #666;
         font-family: monospace;
     }
+
+    .scale-note {
+        text-align: center;
+        color: #666;
+        margin-top: 8px;
+        font-size: 12px;
+    }
 </style>
 """
 
@@ -737,7 +752,7 @@ def render_change_heatmap(
     html += _render_color_legend(vmax)
 
     # Render with dynamic height (same calculation as render_heatmap)
-    height = (r * 60) + 240
+    height = (r * 60) + 260
     components.html(html, height=height, scrolling=False)
 
 
@@ -1104,10 +1119,6 @@ def main() -> None:
         global_vmax = _compute_global_vmax(
             st.session_state.write_history,
             st.session_state.state.S,
-        )
-        st.caption(
-            f"Color scale fixed at ±{global_vmax:.3f} "
-            f"(max |value| across all steps and components)"
         )
         
         # Branch: show change view if a step is selected, else live view

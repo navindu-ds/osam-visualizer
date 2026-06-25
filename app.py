@@ -14,7 +14,6 @@ Run with:
 from __future__ import annotations
 
 import streamlit as st
-import streamlit.components.v1 as components
 import yaml
 import numpy as np
 from pathlib import Path
@@ -472,6 +471,10 @@ def _resolve_component_view(requested: str, options: list[str]) -> str:
     return unavailable_fallbacks.get(requested, options[0])
 
 
+def _render_heatmap_iframe(html: str, height: int) -> None:
+    st.iframe(html, height=height)
+
+
 def render_heatmap(
     S: np.ndarray,
     last_diff: np.ndarray | None,
@@ -497,7 +500,7 @@ def render_heatmap(
         vmax: Optional shared color scale; defaults to max(|S|) when omitted
 
     Side effects:
-        - Renders HTML via st.components.v1.html()
+        - Renders HTML via st.iframe()
         - Clears st.session_state.last_diff after rendering (prevents re-animation)
     """
     r = S.shape[0]
@@ -637,7 +640,7 @@ def render_heatmap(
     # Render with dynamic height (adjust based on r)
     # Base: table (60px/row) + margins (60px) + caption (40px) + legend (100px) = ~260px overhead
     height = (r * 60) + 260
-    components.html(html, height=height, scrolling=False)
+    _render_heatmap_iframe(html, height)
 
     # Clear diff to prevent re-animation on next rerun
     st.session_state.last_diff = None
@@ -753,7 +756,7 @@ def render_change_heatmap(
 
     # Render with dynamic height (same calculation as render_heatmap)
     height = (r * 60) + 260
-    components.html(html, height=height, scrolling=False)
+    _render_heatmap_iframe(html, height)
 
 
 # ---------------------------------------------------------------------------

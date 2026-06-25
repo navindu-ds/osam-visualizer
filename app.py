@@ -60,6 +60,8 @@ _DIFF_THRESHOLD: float = CONFIG["visualization"]["diff_highlight_threshold"]
 _MODEL_NAME: str = CONFIG["encoder"]["model_name"]
 _EMBEDDING_DIM: int = CONFIG["projections"]["input_dim"]
 _INIT_SCALE: float = CONFIG["projections"]["init_scale"]
+_PAPER_URL: str = "https://arxiv.org/abs/2605.12357"
+_GITHUB_URL: str = "https://github.com/navindu-ds/osam-visualizer"
 
 # ---------------------------------------------------------------------------
 # Encoder caching — loads the SentenceTransformer model once per process.
@@ -780,10 +782,27 @@ def main() -> None:
     # ------------------------------------------------------------------
 
     st.title("OSAM Memory Visualizer")
-    st.caption(
-        "An interactive testbed for the Online State of Associative Memory module "
-        "— δ-mem (Lei et al., 2026)"
+    st.markdown(
+        "A lightweight interactive testbed for the Online State of Associative "
+        "Memory (OSAM) from delta-mem. Write sentences into the memory matrix, "
+        "inspect per-sentence memory updates, and test retrieval behavior."
     )
+
+    st.markdown(
+        "Based on the paper [δ-mem: Efficient Online Memory for Large Language Models]({_PAPER_URL}) by Jingdi Lei, Di Zhang, Junxian Li, Weida Wang, Kaixuan Fan, Xiang Liu, Qihan Liu, Xiaoteng Ma, Baian Chen, Soujanya Poria"
+    )
+
+    link_col1, link_col2, _ = st.columns([1, 1, 8])
+    with link_col1:
+        st.markdown(
+            f"[![Paper](https://img.shields.io/badge/Paper-arXiv-B31B1B?logo=arxiv&logoColor=white)]"
+            f"({_PAPER_URL})"
+        )
+    with link_col2:
+        st.markdown(
+            f"[![GitHub](https://img.shields.io/badge/GitHub-Repository-181717?logo=github&logoColor=white)]"
+            f"({_GITHUB_URL})"
+        )
 
     # ------------------------------------------------------------------
     # Parameters — compact single row.

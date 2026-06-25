@@ -181,6 +181,15 @@ def init_session_state() -> None:
     if "last_insert_count" not in st.session_state:
         st.session_state.last_insert_count = None
 
+    if "write_history" not in st.session_state:
+        st.session_state.write_history = []
+
+    if "selected_step" not in st.session_state:
+        st.session_state.selected_step = None
+
+    if "selected_component_view" not in st.session_state:
+        st.session_state.selected_component_view = "Net Change"
+
 
 # ---------------------------------------------------------------------------
 # Full session reset — rebuilds all stateful objects for a given r.
@@ -249,6 +258,11 @@ def _apply_reset(new_r: int) -> None:
     st.session_state.last_results = None
     st.session_state.last_query = None
     st.session_state.confirm_reset = False
+    st.session_state.write_history = []
+    st.session_state.selected_step = None
+    st.session_state.selected_component_view = "Net Change"
+    if "global_component_view" in st.session_state:
+        del st.session_state.global_component_view
     # Note: r_input widget key is NOT set here — after a successful apply/reset,
     # state.r == new_r and the widget already holds new_r, so no sync needed.
 
@@ -415,8 +429,47 @@ def _render_color_legend(vmax: float) -> str:
         <span>0.000</span>
         <span>+{vmax:.3f}</span>
     </div>
+    <div class="scale-note">Color scale fixed at ±{vmax:.3f} (max |value| across all steps and components)</div>
 </div>
 """
+
+
+def _compute_global_vmax(write_history: list, current_S: np.ndarray) -> float:
+    """
+    Compute a shared color-scale maximum across all memory views.
+
+    Uses the largest absolute cell value from the live matrix, every stored
+    pre/post state, diff, and decomposition component so component toggles and
+    sentence selections share one meaningful diverging scale.
+    """
+    vmax = float(np.max(np.abs(current_S)))
+    for entry in write_history:
+        S_before = entry["S_before"]
+        diff = entry["diff"]
+        k = entry["k"]
+        v = entry["v"]
+        beta = entry["beta"]
+
+        S_t = S_before + diff
+        retention = (1 - beta) * S_before
+        erase = -beta * np.outer(S_before @ k, k)
+        write = beta * np.outer(v, k)
+
+        for arr in (S_before, S_t, diff, retention, erase, write):
+            vmax = max(vmax, float(np.max(np.abs(arr))))
+
+    return max(vmax, 1e-6)
+
+
+def _resolve_component_view(requested: str, options: list[str]) -> str:
+    """Map a persisted component label to a valid option for the current sentence."""
+    if requested in options:
+        return requested
+    unavailable_fallbacks = {
+        "Retention": "Net Change",
+        "Erase Prediction": "Net Change",
+    }
+    return unavailable_fallbacks.get(requested, options[0])
 
 
 def render_heatmap(
@@ -424,6 +477,7 @@ def render_heatmap(
     last_diff: np.ndarray | None,
     step_count: int,
     config: dict,
+    vmax: float | None = None,
 ) -> None:
     """
     Render the memory matrix as a custom HTML/CSS heatmap.
@@ -440,13 +494,15 @@ def render_heatmap(
         last_diff: Difference matrix from last update (for pulse animation)
         step_count: Number of sentences written (for caption)
         config: Configuration dict with visualization settings
+        vmax: Optional shared color scale; defaults to max(|S|) when omitted
 
     Side effects:
         - Renders HTML via st.components.v1.html()
         - Clears st.session_state.last_diff after rendering (prevents re-animation)
     """
     r = S.shape[0]
-    vmax = max(abs(S).max(), 1e-6)  # Avoid division by zero
+    if vmax is None:
+        vmax = max(abs(S).max(), 1e-6)
     is_empty = np.allclose(S, 0.0, atol=1e-9)
     
     # Get pulse animation settings from config
@@ -541,6 +597,13 @@ def render_heatmap(
         color: #666;
         font-family: monospace;
     }}
+
+    .scale-note {{
+        text-align: center;
+        color: #666;
+        margin-top: 8px;
+        font-size: 12px;
+    }}
 </style>
 """
 
@@ -572,12 +635,125 @@ def render_heatmap(
     html += _render_color_legend(vmax)
 
     # Render with dynamic height (adjust based on r)
-    # Base: table (60px/row) + margins (60px) + caption (40px) + legend (80px) = ~240px overhead
-    height = (r * 60) + 240
+    # Base: table (60px/row) + margins (60px) + caption (40px) + legend (100px) = ~260px overhead
+    height = (r * 60) + 260
     components.html(html, height=height, scrolling=False)
 
     # Clear diff to prevent re-animation on next rerun
     st.session_state.last_diff = None
+
+
+def render_change_heatmap(
+    matrix: np.ndarray,
+    step_index: int,
+    vmax: float,
+    caption: str | None = None,
+) -> None:
+    """
+    Render a change matrix (diff or component) as a static HTML heatmap.
+
+    Similar to render_heatmap() but:
+    - No pulse animation (static view of historical data)
+    - Uses caller-provided vmax for cross-view color comparability
+    - Displays custom caption (e.g., "Change from sentence #3")
+    - Does NOT clear last_diff
+
+    Args:
+        matrix: Matrix to visualize (diff or component, r×r numpy array)
+        step_index: Step index for caption (0-indexed internally)
+        vmax: Shared color scale maximum (same legend across all views)
+        caption: Optional custom caption (defaults to "Change from sentence #N")
+    """
+    r = matrix.shape[0]
+    
+    # Default caption
+    if caption is None:
+        step_num = step_index + 1  # Display as 1-indexed
+        caption = f"Change to memory matrix after adding sentence #{step_num}"
+    
+    # CSS styles (no pulse animation - same as live view for consistency)
+    html = """
+<style>
+    table.change-heatmap {
+        border-collapse: collapse;
+        margin: 20px auto;
+        font-family: monospace;
+    }
+    
+    td.change-cell {
+        width: 60px;
+        height: 60px;
+        text-align: center;
+        vertical-align: middle;
+        border: 1px solid #ddd;
+        font-size: 11px;
+        font-weight: 500;
+    }
+    
+    .change-caption {
+        text-align: center;
+        color: #666;
+        margin-top: 15px;
+        font-size: 13px;
+        font-weight: 500;
+    }
+    
+    .legend-container {
+        margin-top: 30px;
+        text-align: center;
+    }
+    
+    .legend-bar {
+        background: linear-gradient(to right, 
+            #2166ac 0%, #67a9cf 25%, #f7f7f7 50%, #ef8a62 75%, #b2182b 100%);
+        height: 20px;
+        width: 320px;
+        margin: 10px auto;
+        border: 1px solid #ddd;
+        border-radius: 3px;
+    }
+    
+    .legend-labels {
+        display: flex;
+        justify-content: space-between;
+        width: 320px;
+        margin: 5px auto;
+        font-size: 12px;
+        color: #666;
+        font-family: monospace;
+    }
+
+    .scale-note {
+        text-align: center;
+        color: #666;
+        margin-top: 8px;
+        font-size: 12px;
+    }
+</style>
+"""
+
+    # Build table
+    html += '<table class="change-heatmap">\n'
+    for i in range(r):
+        html += "  <tr>\n"
+        for j in range(r):
+            value = matrix[i, j]
+            color = _value_to_hex(value, vmax)
+            
+            html += f'    <td class="change-cell" style="background-color: {color};">'
+            html += f"{value:.3f}</td>\n"
+        html += "  </tr>\n"
+    html += "</table>\n"
+
+    # Add caption
+    html += f'<div class="change-caption">{caption}</div>\n'
+
+    # Add color legend
+    html += _render_color_legend(vmax)
+
+    # Render with dynamic height (same calculation as render_heatmap)
+    height = (r * 60) + 260
+    components.html(html, height=height, scrolling=False)
 
 
 # ---------------------------------------------------------------------------
@@ -766,6 +942,9 @@ def main() -> None:
                             "Reset memory to add more sentences."
                         )
                     else:
+                        # Capture memory state before write for history
+                        S_before = st.session_state.state.S.copy()
+                        
                         # Execute write with loading spinner
                         with st.spinner("Encoding and writing to memory..."):
                             new_state, metadata = st.session_state.ssw.execute(
@@ -788,6 +967,20 @@ def main() -> None:
 
                         # Save diff for heatmap pulse animation
                         st.session_state.last_diff = metadata["state_diff"]
+
+                        # Store write history for per-sentence change visualization
+                        st.session_state.write_history.append({
+                            "step_index": metadata["step_index"],
+                            "text": metadata["text"],
+                            "diff": metadata["state_diff"],
+                            "S_before": S_before,
+                            "k": metadata["key"],
+                            "v": metadata["value"],
+                            "beta": metadata.get("beta_used", st.session_state.beta),
+                        })
+                        
+                        # Reset selection to show live view for new write
+                        st.session_state.selected_step = None
 
                         # Clear stale retrieval results
                         st.session_state.last_results = None
@@ -844,7 +1037,7 @@ def main() -> None:
         
         # Show success feedback after buttons (same location as error messages)
         if st.session_state.last_insert_step is not None:
-            st.success(f"Sentence inserted")
+            st.success("Sentence inserted")
             # Clear the flag so it doesn't show on every rerun
             st.session_state.last_insert_step = None
             st.session_state.last_insert_count = None
@@ -882,9 +1075,14 @@ def main() -> None:
         if num_entries == 0:
             st.info("No sentences stored yet. Insert a sentence to begin building memory.")
         else:
-            # Display entries in reverse order (most recent first)
-            st.write("")  # Small spacing
+            # "Back to live view" button (only when a step is selected)
+            st.caption("Click a sentence in the registry to view a breakdown of its changes in the Memory Matrix.")
+            if st.session_state.selected_step is not None:
+                if st.button("← Back to Live View", key="back_to_live", use_container_width=True):
+                    st.session_state.selected_step = None
+                    st.rerun()
             
+            # Display entries in reverse order (most recent first)
             for entry in reversed(registry.entries):
                 step_num = entry.step_index + 1  # 0-indexed internally, display as 1-indexed
                 text = entry.text
@@ -892,8 +1090,23 @@ def main() -> None:
                 # Truncate long sentences with ellipsis
                 display_text = text if len(text) <= 60 else text[:57] + "..."
                 
-                # Display with step number and text
-                st.markdown(f"**#{step_num}** · {display_text}")
+                # Check if this step is selected
+                is_selected = (st.session_state.selected_step == entry.step_index)
+                
+                # Visual indicator for selected entry
+                prefix = "▶ " if is_selected else ""
+                button_label = f"{prefix}**#{step_num}** · {display_text}"
+                
+                # Create clickable button for each sentence
+                button_type = "primary" if is_selected else "secondary"
+                if st.button(
+                    button_label,
+                    key=f"select_step_{entry.step_index}",
+                    use_container_width=True,
+                    type=button_type,
+                ):
+                    st.session_state.selected_step = entry.step_index
+                    st.rerun()
 
     # ---------------------------------------------------------------
     # Right column: Memory Matrix Visualization
@@ -902,12 +1115,161 @@ def main() -> None:
 
         # Memory matrix heatmap visualization
         st.subheader("Memory Matrix")
-        render_heatmap(
-            S=st.session_state.state.S,
-            last_diff=st.session_state.last_diff,
-            step_count=st.session_state.ssw.step_counter,
-            config=CONFIG,
+
+        global_vmax = _compute_global_vmax(
+            st.session_state.write_history,
+            st.session_state.state.S,
         )
+        
+        # Branch: show change view if a step is selected, else live view
+        if st.session_state.selected_step is not None:
+            # Find the corresponding write history entry
+            selected_entry = None
+            for entry in st.session_state.write_history:
+                if entry["step_index"] == st.session_state.selected_step:
+                    selected_entry = entry
+                    break
+            
+            if selected_entry is not None:
+                # Show header indicating which sentence is being viewed
+                step_num = selected_entry["step_index"] + 1
+                st.caption(f"📊 Viewing change for sentence **#{step_num}**: \"{selected_entry['text'][:50]}...\"" if len(selected_entry['text']) > 50 else f"📊 Viewing change for sentence **#{step_num}**: \"{selected_entry['text']}\"")
+                st.write("")  # Small spacing
+                
+                # Beta used at this write step (stored in write_history on insert)
+                step_beta = selected_entry["beta"]
+                st.caption(f"Write strength at this step: $\\boldsymbol{{\\beta_{{{step_num}}}}} = {step_beta:.2f}$")
+                
+                # Component selector (Phase 2: decomposition view)
+                # For first sentence (step 0), S_{t-1} is zeros, so Retention and Erase are nil
+                is_first_sentence = selected_entry["step_index"] == 0
+
+                if is_first_sentence:
+                    component_options = ["Net Change", "Write New Value", "Final State"]
+                else:
+                    component_options = [
+                        "Retention",
+                        "Erase Prediction",
+                        "Write New Value",
+                        "Final State",
+                        "Net Change",
+                    ]
+
+                previous_view = st.session_state.selected_component_view
+                resolved_view = _resolve_component_view(previous_view, component_options)
+                if previous_view not in component_options and previous_view in (
+                    "Retention",
+                    "Erase Prediction",
+                ):
+                    st.caption(
+                        "Retention and Erase are zero at step 0; showing "
+                        f"**{resolved_view}** instead."
+                    )
+
+                if st.session_state.selected_component_view not in component_options:
+                    st.session_state.selected_component_view = resolved_view
+                if "global_component_view" not in st.session_state:
+                    st.session_state.global_component_view = resolved_view
+                elif st.session_state.global_component_view not in component_options:
+                    st.session_state.global_component_view = resolved_view
+
+                component_view = st.radio(
+                    "Component view:",
+                    component_options,
+                    horizontal=True,
+                    key="global_component_view",
+                    help="View different components of the memory update equation",
+                )
+                st.session_state.selected_component_view = component_view
+                
+                # Compute selected component matrix and formula
+                # step_index is 0-based; step_num = step_index + 1 is the post-write state S_t
+                step_index = selected_entry["step_index"]
+                S_before = selected_entry["S_before"]
+                k = selected_entry["k"]
+                v = selected_entry["v"]
+                beta = step_beta
+                
+                if component_view == "Net Change":
+                    matrix = selected_entry["diff"]
+                    formula = f"S_{{{step_num}}} - S_{{{step_index}}}"
+                    caption = f"Net change to memory from sentence #{step_num}"
+                    
+                elif component_view == "Retention":
+                    matrix = (1 - beta) * S_before
+                    formula = (
+                        f"\\text{{Diag}}(\\lambda_{{{step_num}}}) S_{{{step_index}}} "
+                        f"= (1-\\beta_{{{step_num}}}) S_{{{step_index}}}"
+                    )
+                    caption = "Retention component (scaled old state)"
+                    
+                elif component_view == "Erase Prediction":
+                    prediction = S_before @ k
+                    matrix = -beta * np.outer(prediction, k)
+                    formula = (
+                        f"-\\text{{Diag}}(\\beta_{{{step_num}}}) S_{{{step_index}}} "
+                        f"\\mathbf{{k}}_{{{step_num}}} (\\mathbf{{k}}_{{{step_num}}})^\\top"
+                    )
+                    caption = "Erase prediction component"
+                    
+                elif component_view == "Write New Value":
+                    matrix = beta * np.outer(v, k)
+                    formula = (
+                        f"+\\text{{Diag}}(\\beta_{{{step_num}}}) \\mathbf{{v}}_{{{step_num}}} "
+                        f"(\\mathbf{{k}}_{{{step_num}}})^\\top"
+                    )
+                    caption = "Write new value component"
+
+                elif component_view == "Final State":
+                    retention = (1 - beta) * S_before
+                    prediction = S_before @ k
+                    erase = -beta * np.outer(prediction, k)
+                    write = beta * np.outer(v, k)
+                    matrix = retention + erase + write
+                    formula = (
+                        f"S_{{{step_num}}} = \\text{{Diag}}(\\lambda_{{{step_num}}}) S_{{{step_index}}} "
+                        f"- \\text{{Diag}}(\\beta_{{{step_num}}}) S_{{{step_index}}} "
+                        f"\\mathbf{{k}}_{{{step_num}}} (\\mathbf{{k}}_{{{step_num}}})^\\top "
+                        f"+ \\text{{Diag}}(\\beta_{{{step_num}}}) \\mathbf{{v}}_{{{step_num}}} "
+                        f"(\\mathbf{{k}}_{{{step_num}}})^\\top"
+                    )
+                    caption = f"Final memory state after sentence #{step_num} (sum of 3 components)"
+
+                else:
+                    st.error(f"Unknown component view: {component_view}")
+                    st.stop()
+                
+                # Display the formula
+                st.latex(formula)
+                st.write("")  # Small spacing
+                
+                # Render the selected component heatmap
+                render_change_heatmap(
+                    matrix=matrix,
+                    step_index=selected_entry["step_index"],
+                    vmax=global_vmax,
+                    caption=caption,
+                )
+            else:
+                # Fallback if entry not found 
+                st.warning(f"History entry for step {st.session_state.selected_step} not found.")
+                render_heatmap(
+                    S=st.session_state.state.S,
+                    last_diff=st.session_state.last_diff,
+                    step_count=st.session_state.ssw.step_counter,
+                    config=CONFIG,
+                    vmax=global_vmax,
+                )
+        else:
+            # Live view: render current memory matrix with pulse animation
+            st.caption("Viewing live memory matrix")
+            render_heatmap(
+                S=st.session_state.state.S,
+                last_diff=st.session_state.last_diff,
+                step_count=st.session_state.ssw.step_counter,
+                config=CONFIG,
+                vmax=global_vmax,
+            )
 
         # ---------------------------------------------------------------
         # Standalone Reset Control

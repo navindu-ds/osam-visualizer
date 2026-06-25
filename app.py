@@ -427,11 +427,39 @@ def _render_color_legend(vmax: float) -> str:
 """
 
 
+def _compute_global_vmax(write_history: list, current_S: np.ndarray) -> float:
+    """
+    Compute a shared color-scale maximum across all memory views.
+
+    Uses the largest absolute cell value from the live matrix, every stored
+    pre/post state, diff, and decomposition component so component toggles and
+    sentence selections share one meaningful diverging scale.
+    """
+    vmax = float(np.max(np.abs(current_S)))
+    for entry in write_history:
+        S_before = entry["S_before"]
+        diff = entry["diff"]
+        k = entry["k"]
+        v = entry["v"]
+        beta = entry["beta"]
+
+        S_t = S_before + diff
+        retention = (1 - beta) * S_before
+        erase = -beta * np.outer(S_before @ k, k)
+        write = beta * np.outer(v, k)
+
+        for arr in (S_before, S_t, diff, retention, erase, write):
+            vmax = max(vmax, float(np.max(np.abs(arr))))
+
+    return max(vmax, 1e-6)
+
+
 def render_heatmap(
     S: np.ndarray,
     last_diff: np.ndarray | None,
     step_count: int,
     config: dict,
+    vmax: float | None = None,
 ) -> None:
     """
     Render the memory matrix as a custom HTML/CSS heatmap.
@@ -448,13 +476,15 @@ def render_heatmap(
         last_diff: Difference matrix from last update (for pulse animation)
         step_count: Number of sentences written (for caption)
         config: Configuration dict with visualization settings
+        vmax: Optional shared color scale; defaults to max(|S|) when omitted
 
     Side effects:
         - Renders HTML via st.components.v1.html()
         - Clears st.session_state.last_diff after rendering (prevents re-animation)
     """
     r = S.shape[0]
-    vmax = max(abs(S).max(), 1e-6)  # Avoid division by zero
+    if vmax is None:
+        vmax = max(abs(S).max(), 1e-6)
     is_empty = np.allclose(S, 0.0, atol=1e-9)
     
     # Get pulse animation settings from config
@@ -591,6 +621,7 @@ def render_heatmap(
 def render_change_heatmap(
     matrix: np.ndarray,
     step_index: int,
+    vmax: float,
     caption: str | None = None,
 ) -> None:
     """
@@ -598,17 +629,17 @@ def render_change_heatmap(
 
     Similar to render_heatmap() but:
     - No pulse animation (static view of historical data)
-    - Uses matrix's own vmax for optimal contrast
+    - Uses caller-provided vmax for cross-view color comparability
     - Displays custom caption (e.g., "Change from sentence #3")
     - Does NOT clear last_diff
 
     Args:
         matrix: Matrix to visualize (diff or component, r×r numpy array)
         step_index: Step index for caption (0-indexed internally)
+        vmax: Shared color scale maximum (same legend across all views)
         caption: Optional custom caption (defaults to "Change from sentence #N")
     """
     r = matrix.shape[0]
-    vmax = max(abs(matrix).max(), 1e-6)  # Use matrix's own range for contrast
     
     # Default caption
     if caption is None:
@@ -1013,15 +1044,13 @@ def main() -> None:
             st.info("No sentences stored yet. Insert a sentence to begin building memory.")
         else:
             # "Back to live view" button (only when a step is selected)
+            st.caption("Click a sentence in the registry to view a breakdown of its changes in the Memory Matrix.")
             if st.session_state.selected_step is not None:
                 if st.button("← Back to Live View", key="back_to_live", use_container_width=True):
                     st.session_state.selected_step = None
                     st.rerun()
-                st.write("")  # Small spacing
             
             # Display entries in reverse order (most recent first)
-            st.write("")  # Small spacing
-            
             for entry in reversed(registry.entries):
                 step_num = entry.step_index + 1  # 0-indexed internally, display as 1-indexed
                 text = entry.text
@@ -1054,6 +1083,15 @@ def main() -> None:
 
         # Memory matrix heatmap visualization
         st.subheader("Memory Matrix")
+
+        global_vmax = _compute_global_vmax(
+            st.session_state.write_history,
+            st.session_state.state.S,
+        )
+        st.caption(
+            f"Color scale fixed at ±{global_vmax:.3f} "
+            f"(max |value| across all steps and components)"
+        )
         
         # Branch: show change view if a step is selected, else live view
         if st.session_state.selected_step is not None:
@@ -1161,6 +1199,7 @@ def main() -> None:
                 render_change_heatmap(
                     matrix=matrix,
                     step_index=selected_entry["step_index"],
+                    vmax=global_vmax,
                     caption=caption,
                 )
             else:
@@ -1171,6 +1210,7 @@ def main() -> None:
                     last_diff=st.session_state.last_diff,
                     step_count=st.session_state.ssw.step_counter,
                     config=CONFIG,
+                    vmax=global_vmax,
                 )
         else:
             # Live view: render current memory matrix with pulse animation
@@ -1180,6 +1220,7 @@ def main() -> None:
                 last_diff=st.session_state.last_diff,
                 step_count=st.session_state.ssw.step_counter,
                 config=CONFIG,
+                vmax=global_vmax,
             )
 
         # ---------------------------------------------------------------

@@ -1068,7 +1068,14 @@ def main() -> None:
 
         # Retrieval Results Section (only visible when results exist)
         if st.session_state.last_results is not None:
-            st.subheader("Retrieval Results")
+            results_col1, results_col2 = st.columns([5, 1])
+            with results_col1:
+                st.subheader("Retrieval Results")
+            with results_col2:
+                if st.button("Close", key="close_results_btn", type="secondary"):
+                    st.session_state.last_results = None
+                    st.session_state.last_query = None
+                    st.rerun()
             
             # Query header
             st.caption(f"Query: \"{st.session_state.last_query}\"")

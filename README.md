@@ -1,6 +1,7 @@
 # OSAM Memory Visualizer
 
 [![Paper](https://img.shields.io/badge/Paper-arXiv-B31B1B?logo=arxiv&logoColor=white)](https://arxiv.org/abs/2605.12357)
+[![Demo](https://img.shields.io/badge/Demo-Live-FF4B4B?logo=streamlit&logoColor=white)](https://osam-visualizer.streamlit.app/)
 [![GitHub](https://img.shields.io/badge/GitHub-Repository-181717?logo=github&logoColor=white)](https://github.com/navindu-ds/osam-visualizer)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
@@ -177,6 +178,8 @@ A [`.devcontainer`](.devcontainer/devcontainer.json) is included. Open the repo 
 ---
 
 ## Deployment
+
+**Live demo:** [https://osam-visualizer.streamlit.app/](https://osam-visualizer.streamlit.app/)
 
 The app is compatible with [Streamlit Community Cloud](https://streamlit.io/cloud):
 

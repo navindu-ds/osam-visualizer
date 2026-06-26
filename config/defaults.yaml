@@ -82,6 +82,9 @@ visualization:
   # Cells with |diff| > threshold are visually emphasized
   diff_highlight_threshold: 0.001
 
+  # Decimal places shown in heatmap cells and color legend
+  matrix_decimal_places: 4
+
 # Testing Parameters (used in pytest fixtures)
 testing:
   # Random seed for reproducible matrix initialization in tests

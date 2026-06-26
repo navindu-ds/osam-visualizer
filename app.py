@@ -22,6 +22,8 @@ from src.memory_state import OSAMState
 from src.writing_strategies import SequenceStateWrite
 from src.retrieval import SentenceRegistry
 from src.encoder import ProjectionMatrix
+from ui.info_dialog import render_info_dialog
+from ui.header_badges import render_header_badges
 
 # ---------------------------------------------------------------------------
 # Page configuration — must be the very first Streamlit call
@@ -781,7 +783,33 @@ def main() -> None:
     # Header
     # ------------------------------------------------------------------
 
-    st.title("OSAM Memory Visualizer")
+    st.markdown(
+        """
+<style>
+.osam-title-info-row ~ div[data-testid="stHorizontalBlock"] [data-testid="stButton"] button {
+    width: 2.25rem !important;
+    min-width: 2.25rem !important;
+    height: 2.25rem !important;
+    min-height: 2.25rem !important;
+    padding: 0 !important;
+    font-size: 1rem !important;
+    line-height: 1 !important;
+}
+.osam-title-info-row ~ div[data-testid="stHorizontalBlock"] [data-testid="stButton"] {
+    width: auto !important;
+}
+</style>
+<span class="osam-title-info-row"></span>
+        """,
+        unsafe_allow_html=True,
+    )
+    title_col, info_col = st.columns([11, 1], vertical_alignment="center")
+    with title_col:
+        st.title("OSAM Memory Visualizer")
+    with info_col:
+        if st.button("ℹ", key="info_dialog_btn", help="How it works", type="secondary"):
+            render_info_dialog()
+
     st.markdown(
         "A lightweight interactive testbed for the Online State of Associative "
         "Memory (OSAM) from delta-mem. Write sentences into the memory matrix, "
@@ -792,17 +820,7 @@ def main() -> None:
         "Based on the paper [δ-mem: Efficient Online Memory for Large Language Models]({_PAPER_URL}) by Jingdi Lei, Di Zhang, Junxian Li, Weida Wang, Kaixuan Fan, Xiang Liu, Qihan Liu, Xiaoteng Ma, Baian Chen, Soujanya Poria"
     )
 
-    link_col1, link_col2, _ = st.columns([1, 1, 8])
-    with link_col1:
-        st.markdown(
-            f"[![Paper](https://img.shields.io/badge/Paper-arXiv-B31B1B?logo=arxiv&logoColor=white)]"
-            f"({_PAPER_URL})"
-        )
-    with link_col2:
-        st.markdown(
-            f"[![GitHub](https://img.shields.io/badge/GitHub-Repository-181717?logo=github&logoColor=white)]"
-            f"({_GITHUB_URL})"
-        )
+    render_header_badges(_PAPER_URL, _GITHUB_URL)
 
     # ------------------------------------------------------------------
     # Parameters — compact single row.

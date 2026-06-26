@@ -9,7 +9,7 @@ An interactive **Streamlit** web app for exploring the **Online State of Associa
 
 Write sentences into a fixed-size memory matrix, inspect how each write updates the state, and test read-only retrieval — all with live heatmaps and per-sentence change views.
 
-> **Not the official δ-mem implementation.** This repo is an independent educational demo. It implements the core OSAM **delta-rule write** and **matrix read**, but it does **not** integrate with or steer LLM weights, attention, or text generation. Hidden states come from a lightweight **SentenceTransformer** encoder (not LLM layer outputs), projections are **fixed and untrained**, and retrieval is a **cosine-similarity lookup** over a sentence registry — not the paper's low-rank attention correction pathway into an LLM. Use it to visualize memory dynamics, not to reproduce δ-mem end-to-end results.
+> Note: **Not the official δ-mem implementation.** This repo is an independent educational demo. It implements the core OSAM **delta-rule write** and **matrix read**, but it does **not** integrate with or steer LLM weights, attention, or text generation. Hidden states come from a lightweight **SentenceTransformer** encoder (not LLM layer outputs), projections are **fixed and untrained**, and retrieval is a **cosine-similarity lookup** over a sentence registry — not the paper's low-rank attention correction pathway into an LLM. Use it to visualize memory dynamics, not to reproduce δ-mem end-to-end results.
 
 ---
 
@@ -152,6 +152,7 @@ Defaults live in [`config/defaults.yaml`](config/defaults.yaml). Common settings
 | `retrieval.top_k` | `5` | Number of retrieval results |
 | `visualization.matrix_decimal_places` | `4` | Heatmap cell precision |
 | `encoder.model_name` | `all-MiniLM-L6-v2` | Sentence embedding model |
+| `encoder.embedding_dim` | `384` | Output embedding dimension of the chosen model (Note it should be consistent to selected encoder model)
 
 Streamlit theme and server options: [`.streamlit/config.toml`](.streamlit/config.toml).
 
@@ -187,8 +188,6 @@ The app is compatible with [Streamlit Community Cloud](https://streamlit.io/clou
 - **Python version:** 3.10+
 - **Requirements:** `requirements.txt`
 
-`fileWatcherType = "none"` is set for stable cloud hosting.
-
 ---
 
 ## Documentation
@@ -198,8 +197,7 @@ The app is compatible with [Streamlit Community Cloud](https://streamlit.io/clou
 | [`docs/info/guide.md`](docs/info/guide.md) | User guide (also shown in the ℹ modal) |
 | [`docs/info/technical.md`](docs/info/technical.md) | Technical notes & limitations |
 | [`docs/paper/osam_methodology.md`](docs/paper/osam_methodology.md) | OSAM methodology mapped to the paper |
-| [`docs/functionality.md`](docs/functionality.md) | Backend data flow |
-| [`spec.md`](spec.md) | Full project specification |
+| [`docs/dev_specs`](docs/dev_specs) | Application specifications |
 
 ---
 

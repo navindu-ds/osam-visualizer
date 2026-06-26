@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 160" role="img" aria-label="OSAM state formation: three additive components sum to S_t">
+  <defs>
+    <style>
+      .label { font-family: Arial, sans-serif; font-size: 13px; fill: #333; }
+      .small { font-size: 11px; fill: #555; }
+      .box { stroke: #444; stroke-width: 1.5; rx: 6; }
+      .plus { font-family: Arial, sans-serif; font-size: 22px; fill: #333; font-weight: bold; }
+      .eq { font-family: Arial, sans-serif; font-size: 22px; fill: #333; font-weight: bold; }
+    </style>
+  </defs>
+  <rect class="box" x="10" y="30" width="150" height="70" fill="#dbeafe"/>
+  <text class="label" x="85" y="58" text-anchor="middle">Retention</text>
+  <text class="small" x="85" y="78" text-anchor="middle">(1-&#946;) S<tspan baseline-shift="sub" font-size="9">t-1</tspan></text>
+  <text class="plus" x="175" y="72">+</text>
+  <rect class="box" x="200" y="30" width="170" height="70" fill="#fee2e2"/>
+  <text class="label" x="285" y="58" text-anchor="middle">Erase prediction</text>
+  <text class="small" x="285" y="78" text-anchor="middle">-&#946; (S<tspan baseline-shift="sub" font-size="9">t-1</tspan>k) k<tspan baseline-shift="super" font-size="9">T</tspan></text>
+  <text class="plus" x="385" y="72">+</text>
+  <rect class="box" x="410" y="30" width="150" height="70" fill="#dcfce7"/>
+  <text class="label" x="485" y="58" text-anchor="middle">Write new value</text>
+  <text class="small" x="485" y="78" text-anchor="middle">&#946; v k<tspan baseline-shift="super" font-size="9">T</tspan></text>
+  <text class="eq" x="580" y="72">=</text>
+  <rect class="box" x="605" y="30" width="100" height="70" fill="#f3f4f6"/>
+  <text class="label" x="655" y="62" text-anchor="middle">S<tspan baseline-shift="sub" font-size="9">t</tspan></text>
+  <text class="small" x="360" y="130" text-anchor="middle">These three terms form S_t (not a decomposition of net change S_t - S_t-1).</text>
+</svg>

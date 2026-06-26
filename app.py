@@ -59,6 +59,7 @@ _DEFAULT_BETA: float = CONFIG["memory"]["write_strength"]
 _TOP_K: int = CONFIG["retrieval"]["top_k"]
 _PULSE_MS: int = CONFIG["visualization"]["pulse_duration_ms"]
 _DIFF_THRESHOLD: float = CONFIG["visualization"]["diff_highlight_threshold"]
+_MATRIX_DECIMALS: int = CONFIG["visualization"]["matrix_decimal_places"]
 _MODEL_NAME: str = CONFIG["encoder"]["model_name"]
 _EMBEDDING_DIM: int = CONFIG["projections"]["input_dim"]
 _INIT_SCALE: float = CONFIG["projections"]["init_scale"]
@@ -393,7 +394,12 @@ def _value_to_hex(value: float, vmax: float) -> str:
     return f"#{r:02x}{g:02x}{b:02x}"
 
 
-def _render_empty_state_table(r: int) -> str:
+def _format_matrix_value(value: float, decimals: int) -> str:
+    """Format a heatmap cell or legend value with fixed decimal places."""
+    return f"{value:.{decimals}f}"
+
+
+def _render_empty_state_table(r: int, decimals: int) -> str:
     """
     Generate HTML for empty state heatmap (all zeros).
 
@@ -407,14 +413,17 @@ def _render_empty_state_table(r: int) -> str:
     for i in range(r):
         html += "  <tr>\n"
         for j in range(r):
-            html += '    <td class="cell" style="background-color: #f9f9f9; color: #ccc;">0.000</td>\n'
+            html += (
+                f'    <td class="cell" style="background-color: #f9f9f9; color: #ccc;">'
+                f'{_format_matrix_value(0.0, decimals)}</td>\n'
+            )
         html += "  </tr>\n"
     html += "</table>\n"
     html += '<div class="empty-message">Memory is empty — insert a sentence to begin</div>\n'
     return html
 
 
-def _render_color_legend(vmax: float) -> str:
+def _render_color_legend(vmax: float, decimals: int) -> str:
     """
     Generate HTML for color legend bar with min/max labels.
 
@@ -424,15 +433,17 @@ def _render_color_legend(vmax: float) -> str:
     Returns:
         HTML string with gradient bar and labels
     """
+    zero = _format_matrix_value(0.0, decimals)
+    vmax_fmt = _format_matrix_value(vmax, decimals)
     return f"""
 <div class="legend-container">
     <div class="legend-bar"></div>
     <div class="legend-labels">
-        <span>-{vmax:.3f}</span>
-        <span>0.000</span>
-        <span>+{vmax:.3f}</span>
+        <span>-{vmax_fmt}</span>
+        <span>{zero}</span>
+        <span>+{vmax_fmt}</span>
     </div>
-    <div class="scale-note">Color scale fixed at ±{vmax:.3f} (max |value| across all steps and components)</div>
+    <div class="scale-note">Color scale fixed at ±{vmax_fmt} (max |value| across all steps and components)</div>
 </div>
 """
 
@@ -508,6 +519,7 @@ def render_heatmap(
         - Clears st.session_state.last_diff after rendering (prevents re-animation)
     """
     r = S.shape[0]
+    decimals = config["visualization"]["matrix_decimal_places"]
     if vmax is None:
         vmax = max(abs(S).max(), 1e-6)
     is_empty = np.allclose(S, 0.0, atol=1e-9)
@@ -616,7 +628,7 @@ def render_heatmap(
 
     # Build table
     if is_empty:
-        html += _render_empty_state_table(r)
+        html += _render_empty_state_table(r, decimals)
     else:
         html += '<table class="heatmap">\n'
         for i in range(r):
@@ -630,7 +642,7 @@ def render_heatmap(
 
                 # Use CSS custom property for final color (enables animation)
                 html += f'    <td class="{cell_class}" style="--final-color: {color}; background-color: {color};">'
-                html += f"{value:.3f}</td>\n"
+                html += f"{_format_matrix_value(value, decimals)}</td>\n"
             html += "  </tr>\n"
         html += "</table>\n"
 
@@ -639,7 +651,7 @@ def render_heatmap(
     html += f'<div class="caption">{step_count} {sentence_plural} written</div>\n'
 
     # Add color legend
-    html += _render_color_legend(vmax)
+    html += _render_color_legend(vmax, decimals)
 
     # Render with dynamic height (adjust based on r)
     # Base: table (60px/row) + margins (60px) + caption (40px) + legend (100px) = ~260px overhead
@@ -655,6 +667,7 @@ def render_change_heatmap(
     step_index: int,
     vmax: float,
     caption: str | None = None,
+    decimals: int | None = None,
 ) -> None:
     """
     Render a change matrix (diff or component) as a static HTML heatmap.
@@ -672,7 +685,9 @@ def render_change_heatmap(
         caption: Optional custom caption (defaults to "Change from sentence #N")
     """
     r = matrix.shape[0]
-    
+    if decimals is None:
+        decimals = _MATRIX_DECIMALS
+
     # Default caption
     if caption is None:
         step_num = step_index + 1  # Display as 1-indexed
@@ -748,7 +763,7 @@ def render_change_heatmap(
             color = _value_to_hex(value, vmax)
             
             html += f'    <td class="change-cell" style="background-color: {color};">'
-            html += f"{value:.3f}</td>\n"
+            html += f"{_format_matrix_value(value, decimals)}</td>\n"
         html += "  </tr>\n"
     html += "</table>\n"
 
@@ -756,7 +771,7 @@ def render_change_heatmap(
     html += f'<div class="change-caption">{caption}</div>\n'
 
     # Add color legend
-    html += _render_color_legend(vmax)
+    html += _render_color_legend(vmax, decimals)
 
     # Render with dynamic height (same calculation as render_heatmap)
     height = (r * 60) + 260
